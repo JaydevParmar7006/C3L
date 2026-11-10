@@ -95,6 +95,8 @@ export function createModuleAccessRoutes(
           )
         }
       },
+      // Authorize before reading JSON, including when mounted in the main app.
+      { parse: 'none' },
     )
     .patch(
       '/api/courses/:courseId/modules/:moduleId/visibility',
@@ -153,5 +155,6 @@ export function createModuleAccessRoutes(
           )
         }
       },
+      { parse: 'none' },
     )
 }

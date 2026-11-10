@@ -18,6 +18,8 @@ import { contentUiRoutes } from './content.ui'
 import { moduleCreateRoutes } from './module.create.routes'
 import { moduleListRoutes } from './module.list.routes'
 import { moduleOrganizeRoutes } from './module.organize.routes'
+import { createModuleAccessRoutes } from './module.access.routes'
+import { createMaterialUploadRoutes } from './material.upload.routes'
 
 const base = moduleBase(import.meta.dir)
 
@@ -30,6 +32,11 @@ export default defineModule({
     .use(moduleListRoutes)
     .use(moduleOrganizeRoutes)
     .use(contentUiRoutes)
+    // Sprint 2: Publishing and visibility routes.
+    // Deny mutations until trusted instructor authorization is integrated.
+    .use(createModuleAccessRoutes())
+    // Uploads also deny by default without trusted course authorization.
+    .use(createMaterialUploadRoutes())
     // Front page of this module. The button on the home page opens it.
     .get(
       '/',
