@@ -40,15 +40,20 @@ export function createLearningModule(
   }
 
   // Build the new learning-module object.
+
   const newModule: LearningModule = {
-    id: crypto.randomUUID(),
-    courseId: input.courseId.trim(),
-    title: input.title.trim(),
-    description: input.description?.trim(),
-    week: input.week,
-    topic: input.topic?.trim(),
-    createdAt: new Date().toISOString(),
-  }
+  id: crypto.randomUUID(),
+  courseId: input.courseId.trim(),
+  title: input.title.trim(),
+  description: input.description?.trim(),
+  week: input.week,
+  topic: input.topic?.trim(),
+  createdAt: new Date().toISOString(),
+
+  // Sprint 2: Safe initial access state
+  published: false,
+  visibility: 'hidden',
+}
 
   // Save the new module in temporary memory.
   learningModules.push(newModule)
