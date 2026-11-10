@@ -1,9 +1,73 @@
 
-import { unlink } from 'node:fs/promises'
+import { mkdtemp, readdir, rm, unlink } from 'node:fs/promises'
+import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { describe, expect, test } from 'bun:test'
+import { afterAll, describe, expect, test } from 'bun:test'
 import { createLearningModule } from './module.service'
-import { materialUploadRoutes } from './material.upload.routes'
+import { createMaterialUploadRoutes } from './material.upload.routes'
+import { MAX_MATERIAL_SIZE } from './material.validation'
+
+const testDirectory = await mkdtemp(join(tmpdir(), 'c3l-upload-test-'))
+afterAll(() => rm(testDirectory, { recursive: true, force: true }))
+// This authorizer exists only in the isolated test harness.
+const materialUploadRoutes = createMaterialUploadRoutes({
+  authorizeInstructor: () => true,
+  uploadDirectory: testDirectory,
+})
+
+test.each(['missing', 'false', 'throws'] as const)(
+  'upload authorization fails closed: %s', async (mode) => {
+    const directory = await mkdtemp(join(tmpdir(), 'c3l-denied-'))
+    try {
+      const courseId = `denied-${crypto.randomUUID()}`
+      const module = createLearningModule({ courseId, title: 'Protected' })
+      const router = createMaterialUploadRoutes({
+        uploadDirectory: directory,
+        authorizeInstructor: mode === 'missing' ? undefined : () => {
+          if (mode === 'throws') throw new Error('Authorization unavailable')
+          return false
+        },
+      })
+      for (const forged of [false, true]) {
+        const request = new Request(`http://localhost/api/courses/${courseId}/modules/${module.id}/materials`, {
+          method: 'POST',
+          headers: forged ? { 'x-user-role': 'instructor' } : {},
+          body: 'not multipart',
+        })
+        const response = await router.handle(request)
+        expect(response.status).toBe(403)
+        expect(await response.json()).toEqual({ error: 'Instructor authorization required.' })
+        expect(request.bodyUsed).toBe(false)
+        expect(await readdir(directory)).toEqual([])
+      }
+    } finally {
+      await rm(directory, { recursive: true, force: true })
+    }
+  },
+)
+
+test.each([
+  [0, 'Uploaded file cannot be empty'],
+  [MAX_MATERIAL_SIZE + 1, 'Uploaded file is too large'],
+] as const)('rejects a PDF of size %s without saving it', async (size, error) => {
+  const directory = await mkdtemp(join(tmpdir(), 'c3l-size-'))
+  try {
+    const courseId = `size-${crypto.randomUUID()}`
+    const module = createLearningModule({ courseId, title: 'Size validation' })
+    const router = createMaterialUploadRoutes({ authorizeInstructor: () => true, uploadDirectory: directory })
+    const form = new FormData()
+    form.append('file', new File([new Uint8Array(size)], 'lecture.pdf', { type: 'application/pdf' }))
+    const response = await router.handle(new Request(
+      `http://localhost/api/courses/${courseId}/modules/${module.id}/materials`,
+      { method: 'POST', body: form },
+    ))
+    expect(response.status).toBe(400)
+    expect(await response.json()).toEqual({ error })
+    expect(await readdir(directory)).toEqual([])
+  } finally {
+    await rm(directory, { recursive: true, force: true })
+  }
+})
 
 // These tests check if learning materials can be uploaded correctly.
 describe('M03-FR-003: Learning-material uploads', () => {
@@ -58,8 +122,7 @@ describe('M03-FR-003: Learning-material uploads', () => {
 
         // Find the uploaded file inside Module 3.
     const filePath = join(
-      import.meta.dir,
-      '.c3l-content-uploads',
+      testDirectory,
       body.material.storedFilename,
     )
 

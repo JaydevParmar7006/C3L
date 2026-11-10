@@ -1,6 +1,94 @@
 import { expect, test } from 'bun:test'
 import { createApp } from '../../app'
 import type { LearningModule } from './module.model'
+import { Elysia } from 'elysia'
+import { createModuleAccessRoutes } from './module.access.routes'
+import { createMaterialUploadRoutes } from './material.upload.routes'
+import { mkdtemp, readdir, rm } from 'node:fs/promises'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
+
+test('mounted Sprint-2 publishing and visibility routes deny unauthorized changes', async () => {
+  const app = await createApp()
+  const courseId = `mounted-denied-${crypto.randomUUID()}`
+  const base = `http://localhost/03-content/api/courses/${courseId}/modules`
+  const created = await app.fetch(new Request(base, {
+    method: 'POST', headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ title: 'Protected module' }),
+  }))
+  expect(created.status).toBe(201)
+  const { module } = await created.json() as { module: LearningModule }
+  for (const [path, body] of [
+    ['publication', { published: true }], ['visibility', { visibility: 'visible' }],
+  ] as const) {
+    const response = await app.fetch(new Request(`${base}/${module.id}/${path}`, {
+      method: 'PATCH',
+      headers: { 'content-type': 'application/json', 'x-user-role': 'instructor' },
+      body: JSON.stringify(body),
+    }))
+    expect(response.status).toBe(403)
+    expect(response.headers.get('content-type')).toContain('application/json')
+    expect(await response.json()).toEqual({ error: 'Instructor authorization required.' })
+  }
+  const listed = await app.fetch(new Request(base))
+  expect(await listed.json()).toMatchObject({ modules: [{ id: module.id, published: false, visibility: 'hidden' }] })
+
+  // No multipart body: authorization must run before upload parsing.
+  const uploadDirectory = process.env.C3L_CONTENT_UPLOAD_DIR ?? join(import.meta.dir, '.c3l-content-uploads')
+  const files = async () => readdir(uploadDirectory).then((names) => names.sort()).catch((error: NodeJS.ErrnoException) => {
+    if (error.code === 'ENOENT') return []
+    throw error
+  })
+  const beforeFiles = await files()
+  const upload = await app.fetch(new Request(`${base}/${module.id}/materials`, {
+    method: 'POST', headers: { 'x-user-role': 'instructor' }, body: 'not multipart',
+  }))
+  expect(upload.status).toBe(403)
+  expect(await upload.json()).toEqual({ error: 'Instructor authorization required.' })
+  expect(await files()).toEqual(beforeFiles)
+})
+
+test('isolated trusted composition permits upload, publication and visibility', async () => {
+  const directory = await mkdtemp(join(tmpdir(), 'c3l-composed-'))
+  try {
+    const courseId = `trusted-${crypto.randomUUID()}`
+    const production = await createApp()
+    const base = `http://localhost/03-content/api/courses/${courseId}/modules`
+    const created = await production.fetch(new Request(base, {
+      method: 'POST', headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ title: 'Isolated test module' }),
+    }))
+    const { module } = await created.json() as { module: LearningModule }
+    // Only this test composition supplies trust; production remains deny-all.
+    const authorizeInstructor = (_request: Request, requested: string) => requested === courseId
+    const app = new Elysia().group('/03-content', (scope) => scope
+      .use(createModuleAccessRoutes({ authorizeInstructor }))
+      .use(createMaterialUploadRoutes({ authorizeInstructor, uploadDirectory: directory })))
+    for (const [path, body] of [
+      ['publication', { published: true }], ['visibility', { visibility: 'visible' }],
+    ] as const) {
+      const response = await app.handle(new Request(`${base}/${module.id}/${path}`, {
+        method: 'PATCH', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body),
+      }))
+      expect(response.status).toBe(200)
+      expect(await response.json()).toMatchObject({ module: body })
+    }
+    const form = new FormData()
+    form.append('file', new File(['%PDF-test'], 'lecture.pdf', { type: 'application/pdf' }))
+    const uploaded = await app.handle(new Request(`${base}/${module.id}/materials`, { method: 'POST', body: form }))
+    expect(uploaded.status).toBe(201)
+    expect(await uploaded.json()).toMatchObject({ material: { courseId, moduleId: module.id, filename: 'lecture.pdf' } })
+    expect(await readdir(directory)).toHaveLength(1)
+    const invalid = new FormData()
+    invalid.append('file', new File(['bad'], 'bad.exe', { type: 'application/octet-stream' }))
+    const rejected = await app.handle(new Request(`${base}/${module.id}/materials`, { method: 'POST', body: invalid }))
+    expect(rejected.status).toBe(400)
+    expect(await rejected.json()).toEqual({ error: 'Unsupported file type' })
+    expect(await readdir(directory)).toHaveLength(1)
+  } finally {
+    await rm(directory, { recursive: true, force: true })
+  }
+})
 
 test('mounted Module 3 homepage links to the management page', async () => {
   const app = await createApp()

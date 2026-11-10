@@ -3,13 +3,33 @@ import { Elysia } from 'elysia'
 import { getLearningModulesByCourse } from './module.service'
 import { saveLearningMaterial } from './material.storage'
 import { validateLearningMaterial } from './material.validation'
+import type { ModuleAccessAuthorizer } from './module.access.routes'
+
+export interface MaterialUploadRouteOptions {
+  authorizeInstructor?: ModuleAccessAuthorizer
+  /** Trusted server configuration, never taken from request data. */
+  uploadDirectory?: string
+}
 
 // This route handles uploading learning materials to a module.
-export const materialUploadRoutes = new Elysia().post(
+// Deny by default until authentication AND course authority are integrated.
+export function createMaterialUploadRoutes(options: MaterialUploadRouteOptions = {}) {
+  return new Elysia().post(
   '/api/courses/:courseId/modules/:moduleId/materials',
   async ({ params, request, set }) => {
     // Get the course ID and module ID from the URL.
     const { courseId, moduleId } = params
+
+    let authorized = false
+    try {
+      authorized = (await options.authorizeInstructor?.(request, courseId)) === true
+    } catch {
+      authorized = false
+    }
+    if (!authorized) {
+      set.status = 403
+      return { error: 'Instructor authorization required.' }
+    }
 
     // Check if the module exists in the selected course.
     const module = getLearningModulesByCourse(courseId).find(
@@ -65,7 +85,7 @@ export const materialUploadRoutes = new Elysia().post(
 
     // Save the actual file contents to disk.
     try {
-      const savedFile = await saveLearningMaterial(file)
+      const savedFile = await saveLearningMaterial(file, options.uploadDirectory)
 
       // Create information about the uploaded material.
       const material = {
@@ -92,3 +112,7 @@ export const materialUploadRoutes = new Elysia().post(
   // Let us read and validate the multipart request ourselves.
   { parse: 'none' },
 )
+}
+
+// Retain the existing export with safe default authorization.
+export const materialUploadRoutes = createMaterialUploadRoutes()

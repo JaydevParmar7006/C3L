@@ -9,15 +9,15 @@ const uploadDirectory =
   join(import.meta.dir, '.c3l-content-uploads')
 
 // Save an uploaded file and return its storage details.
-export async function saveLearningMaterial(file: File) {
+export async function saveLearningMaterial(file: File, directory = uploadDirectory) {
   // Create the upload folder if it does not exist.
-  await mkdir(uploadDirectory, { recursive: true })
+  await mkdir(directory, { recursive: true })
 
   // Generate a unique name to avoid overwriting another file.
   const storedFilename = crypto.randomUUID()
 
   // Build the full path for the new file.
-  const filePath = join(uploadDirectory, storedFilename)
+  const filePath = join(directory, storedFilename)
 
   // Save the actual file contents to disk.
   await Bun.write(filePath, file)
