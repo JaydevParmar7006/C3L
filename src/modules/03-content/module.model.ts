@@ -7,6 +7,10 @@ export interface LearningModule {
   week?: number
   topic?: string
   createdAt: string
+
+  // Sprint 2: Publication and visibility state
+  published: boolean
+  visibility: 'visible' | 'hidden'
 }
 
 export interface CreateLearningModuleInput {
