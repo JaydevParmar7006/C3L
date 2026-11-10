@@ -6,7 +6,7 @@ import { join } from 'node:path'
 // This location can be configured for testing or deployment.
 const uploadDirectory =
   process.env.C3L_CONTENT_UPLOAD_DIR ??
-  join(process.cwd(), '.c3l-content-uploads')
+  join(import.meta.dir, '.c3l-content-uploads')
 
 // Save an uploaded file and return its storage details.
 export async function saveLearningMaterial(file: File) {

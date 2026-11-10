@@ -1,4 +1,5 @@
 
+import { unlink } from 'node:fs/promises'
 import { join } from 'node:path'
 import { describe, expect, test } from 'bun:test'
 import { createLearningModule } from './module.service'
@@ -54,35 +55,34 @@ describe('M03-FR-003: Learning-material uploads', () => {
       }
     }
 
-    // Check that the uploaded material has a unique ID.
-    expect(body.material.id).toBeTruthy()
 
-    // Check that the material belongs to the correct course.
-    expect(body.material.courseId).toBe(courseId)
-
-    // Check that the material is linked to the correct module.
-    expect(body.material.moduleId).toBe(module.id)
-
-    // Check that the original filename is saved correctly.
-    expect(body.material.filename).toBe('lecture.pdf')
-
-    // Find the uploaded file in our local storage folder.
+        // Find the uploaded file inside Module 3.
     const filePath = join(
-      process.cwd(),
+      import.meta.dir,
       '.c3l-content-uploads',
       body.material.storedFilename,
     )
 
-    // Read the file that was saved on disk.
-    const savedFile = Bun.file(filePath)
+    // Always clean up the uploaded file.
+    try {
+      expect(body.material.id).toBeTruthy()
+      expect(body.material.courseId).toBe(courseId)
+      expect(body.material.moduleId).toBe(module.id)
+      expect(body.material.filename).toBe('lecture.pdf')
 
-    // Check that the uploaded file really exists.
-    expect(await savedFile.exists()).toBe(true)
+      // Read the saved file.
+      const savedFile = Bun.file(filePath)
 
-    // Check that the saved content matches the uploaded content.
-    expect(await savedFile.text()).toBe(
-      '%PDF-1.4\nTest PDF content',
-    )
+      expect(await savedFile.exists()).toBe(true)
+      expect(await savedFile.text()).toBe(
+        '%PDF-1.4\nTest PDF content',
+      )
+    } finally {
+      // Delete the uploaded test file.
+      await unlink(filePath).catch((error: NodeJS.ErrnoException) => {
+        if (error.code !== 'ENOENT') throw error
+      })
+    }
   })
 
   test('rejects an unsupported file upload', async () => {
