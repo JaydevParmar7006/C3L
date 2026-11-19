@@ -15,11 +15,7 @@ import { dirname, join } from 'node:path'
 import type { LearningModule } from './module.model'
 
 // Set the location where our database file will be saved.
-const defaultDatabasePath = join(
-  import.meta.dir,
-  '.c3l-content-data',
-  'content.sqlite',
-)
+const defaultDatabasePath = join(import.meta.dir, '.c3l-content-data', 'content.sqlite')
 
 /**
  * Open a database connection.
@@ -27,9 +23,7 @@ const defaultDatabasePath = join(
  * If no path is given, use our local database file.
  * For testing, we can use ':memory:' instead.
  */
-export function openContentDatabase(
-  databasePath: string = defaultDatabasePath,
-): Database {
+export function openContentDatabase(databasePath: string = defaultDatabasePath): Database {
   // Create the database folder if it does not exist.
   // We do not need a folder for an in-memory database.
   if (databasePath !== ':memory:') {
@@ -82,12 +76,10 @@ export function createContentTables(database: Database): void {
  * This function stores the module information
  * so we can use it again later.
  */
-export function saveModuleToDatabase(
-  database: Database,
-  module: LearningModule,
-): void {
+export function saveModuleToDatabase(database: Database, module: LearningModule): void {
   // Add the module information to the database.
-  database.query(`
+  database
+    .query(`
     INSERT INTO learning_modules (
       id,
       course_id,
@@ -100,17 +92,18 @@ export function saveModuleToDatabase(
       visibility
     )
     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-  `).run(
-    module.id,
-    module.courseId,
-    module.title,
-    module.description ?? null,
-    module.week ?? null,
-    module.topic ?? null,
-    module.createdAt,
-    module.published ? 1 : 0,
-    module.visibility,
-  )
+  `)
+    .run(
+      module.id,
+      module.courseId,
+      module.title,
+      module.description ?? null,
+      module.week ?? null,
+      module.topic ?? null,
+      module.createdAt,
+      module.published ? 1 : 0,
+      module.visibility,
+    )
 }
 
 /**
@@ -119,12 +112,10 @@ export function saveModuleToDatabase(
  * This function only returns modules
  * that belong to the requested course.
  */
-export function getModulesFromDatabase(
-  database: Database,
-  courseId: string,
-): LearningModule[] {
+export function getModulesFromDatabase(database: Database, courseId: string): LearningModule[] {
   // Read the modules that belong to this course.
-  const rows = database.query(`
+  const rows = database
+    .query(`
     SELECT
       id,
       course_id,
@@ -138,7 +129,8 @@ export function getModulesFromDatabase(
     FROM learning_modules
     WHERE course_id = ?
     ORDER BY created_at, rowid
-  `).all(courseId) as Array<{
+  `)
+    .all(courseId) as Array<{
     id: string
     course_id: string
     title: string
@@ -168,8 +160,7 @@ export function getModulesFromDatabase(
     published: row.published === 1,
     visibility: row.visibility,
   }))
-
-  }
+}
 
 /**
  * Update the publication state of a learning module.
@@ -184,15 +175,13 @@ export function updateModulePublicationInDatabase(
   published: boolean,
 ): boolean {
   // Update the module only when both IDs match.
-  const result = database.query(`
+  const result = database
+    .query(`
     UPDATE learning_modules
     SET published = ?
     WHERE id = ? AND course_id = ?
-  `).run(
-    published ? 1 : 0,
-    moduleId,
-    courseId,
-  )
+  `)
+    .run(published ? 1 : 0, moduleId, courseId)
 
   // Return true if a module was updated.
   return result.changes === 1
@@ -211,15 +200,13 @@ export function updateModuleVisibilityInDatabase(
   visibility: 'visible' | 'hidden',
 ): boolean {
   // Update the module only when both IDs match.
-  const result = database.query(`
+  const result = database
+    .query(`
     UPDATE learning_modules
     SET visibility = ?
     WHERE id = ? AND course_id = ?
-  `).run(
-    visibility,
-    moduleId,
-    courseId,
-  )
+  `)
+    .run(visibility, moduleId, courseId)
 
   // Return true if a module was updated.
   return result.changes === 1

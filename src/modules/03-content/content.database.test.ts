@@ -22,9 +22,7 @@ describe('Module 3 SQLite database', () => {
 
       // Check if the table was created.
       const result = database
-        .query(
-          "SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'learning_modules'",
-        )
+        .query("SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'learning_modules'")
         .get() as { name: string } | null
 
       // The table should exist.
@@ -50,12 +48,7 @@ describe('Module 3 SQLite database', () => {
             (id, course_id, title, created_at)
           VALUES (?, ?, ?, ?)
         `)
-        .run(
-          'module-1',
-          'course-101',
-          'Introduction to TypeScript',
-          new Date().toISOString(),
-        )
+        .run('module-1', 'course-101', 'Introduction to TypeScript', new Date().toISOString())
 
       // Get the publication and visibility values.
       const module = database
@@ -65,9 +58,9 @@ describe('Module 3 SQLite database', () => {
           WHERE id = ?
         `)
         .get('module-1') as {
-          published: number
-          visibility: string
-        } | null
+        published: number
+        visibility: string
+      } | null
 
       // New modules must be unpublished and hidden.
       expect(module?.published).toBe(0)
@@ -97,12 +90,7 @@ describe('Module 3 SQLite database', () => {
               (id, course_id, title, created_at)
             VALUES (?, ?, ?, ?)
           `)
-          .run(
-            'module-101',
-            'course-101',
-            'TypeScript Basics',
-            new Date().toISOString(),
-          )
+          .run('module-101', 'course-101', 'TypeScript Basics', new Date().toISOString())
       } finally {
         // Close the first database connection.
         firstDatabase.close()
@@ -158,13 +146,11 @@ describe('Module 3 SQLite database', () => {
 
       // Read the saved module from SQLite.
       const saved = database
-        .query(
-          'SELECT title, course_id FROM learning_modules WHERE id = ?',
-        )
+        .query('SELECT title, course_id FROM learning_modules WHERE id = ?')
         .get(module.id) as {
-          title: string
-          course_id: string
-        } | null
+        title: string
+        course_id: string
+      } | null
 
       // Check that the correct module was saved.
       expect(saved?.title).toBe('Introduction to TypeScript')
@@ -176,147 +162,144 @@ describe('Module 3 SQLite database', () => {
   })
 
   test('retrieves modules only from the requested course', () => {
-  // Create a temporary database.
-  const database = openContentDatabase(':memory:')
-
-  try {
-    createContentTables(database)
-
-    // Create two modules belonging to different courses.
-    const firstModule = {
-      id: 'module-course-a',
-      courseId: 'course-a',
-      title: 'TypeScript Basics',
-      createdAt: '2026-11-19T10:00:00.000Z',
-      published: false,
-      visibility: 'hidden' as const,
-    }
-
-    const secondModule = {
-      id: 'module-course-b',
-      courseId: 'course-b',
-      title: 'Database Basics',
-      createdAt: '2026-11-19T11:00:00.000Z',
-      published: false,
-      visibility: 'hidden' as const,
-    }
-
-    // Save both modules.
-    saveModuleToDatabase(database, firstModule)
-    saveModuleToDatabase(database, secondModule)
-
-    // Retrieve modules belonging to course A.
-    const courseAModules = getModulesFromDatabase(
-      database,
-      'course-a',
-    )
-
-    // Course A should contain only its own module.
-    expect(courseAModules).toHaveLength(1)
-    expect(courseAModules[0]?.title).toBe('TypeScript Basics')
-    expect(courseAModules[0]?.courseId).toBe('course-a')
-
-    // A course without modules should return an empty list.
-    expect(getModulesFromDatabase(database, 'unknown-course')).toEqual([])
-  } finally {
-    // Close the database after testing.
-    database.close()
-  }
- })
-
-    test('updates publication only for the correct course', () => {
     // Create a temporary database.
     const database = openContentDatabase(':memory:')
 
     try {
-        createContentTables(database)
+      createContentTables(database)
 
-        // Save a module that starts unpublished.
-        saveModuleToDatabase(database, {
+      // Create two modules belonging to different courses.
+      const firstModule = {
+        id: 'module-course-a',
+        courseId: 'course-a',
+        title: 'TypeScript Basics',
+        createdAt: '2026-11-19T10:00:00.000Z',
+        published: false,
+        visibility: 'hidden' as const,
+      }
+
+      const secondModule = {
+        id: 'module-course-b',
+        courseId: 'course-b',
+        title: 'Database Basics',
+        createdAt: '2026-11-19T11:00:00.000Z',
+        published: false,
+        visibility: 'hidden' as const,
+      }
+
+      // Save both modules.
+      saveModuleToDatabase(database, firstModule)
+      saveModuleToDatabase(database, secondModule)
+
+      // Retrieve modules belonging to course A.
+      const courseAModules = getModulesFromDatabase(database, 'course-a')
+
+      // Course A should contain only its own module.
+      expect(courseAModules).toHaveLength(1)
+      expect(courseAModules[0]?.title).toBe('TypeScript Basics')
+      expect(courseAModules[0]?.courseId).toBe('course-a')
+
+      // A course without modules should return an empty list.
+      expect(getModulesFromDatabase(database, 'unknown-course')).toEqual([])
+    } finally {
+      // Close the database after testing.
+      database.close()
+    }
+  })
+
+  test('updates publication only for the correct course', () => {
+    // Create a temporary database.
+    const database = openContentDatabase(':memory:')
+
+    try {
+      createContentTables(database)
+
+      // Save a module that starts unpublished.
+      saveModuleToDatabase(database, {
         id: 'publication-test-1',
         courseId: 'course-a',
         title: 'SQLite Publication Test',
         createdAt: '2026-11-19T10:00:00.000Z',
         published: false,
         visibility: 'hidden',
-        })
+      })
 
-        // A different course cannot update this module.
-        const wrongCourse = updateModulePublicationInDatabase(
+      // A different course cannot update this module.
+      const wrongCourse = updateModulePublicationInDatabase(
         database,
         'course-b',
         'publication-test-1',
         true,
-        )
+      )
 
-        expect(wrongCourse).toBe(false)
+      expect(wrongCourse).toBe(false)
 
-        // The correct course can publish the module.
-        const updated = updateModulePublicationInDatabase(
+      // The correct course can publish the module.
+      const updated = updateModulePublicationInDatabase(
         database,
         'course-a',
         'publication-test-1',
         true,
-        )
+      )
 
-        expect(updated).toBe(true)
+      expect(updated).toBe(true)
 
-        // Read the saved state from SQLite.
-        const modules = getModulesFromDatabase(database, 'course-a')
+      // Read the saved state from SQLite.
+      const modules = getModulesFromDatabase(database, 'course-a')
 
-        expect(modules).toHaveLength(1)
-        expect(modules[0]?.published).toBe(true)
+      expect(modules).toHaveLength(1)
+      expect(modules[0]?.published).toBe(true)
     } finally {
-        // Close the database after testing.
-        database.close()
+      // Close the database after testing.
+      database.close()
     }
   })
 
-    test('updates visibility only for the correct course', () => {
+  test('updates visibility only for the correct course', () => {
     // Create a temporary database.
     const database = openContentDatabase(':memory:')
 
     try {
-        createContentTables(database)
+      createContentTables(database)
 
-        // Save a module that starts hidden.
-        saveModuleToDatabase(database, {
+      // Save a module that starts hidden.
+      saveModuleToDatabase(database, {
         id: 'visibility-test-1',
         courseId: 'course-a',
         title: 'SQLite Visibility Test',
         createdAt: '2026-11-19T10:00:00.000Z',
         published: false,
         visibility: 'hidden',
-        })
+      })
 
-        // A different course cannot change this module.
-        const wrongCourse = updateModuleVisibilityInDatabase(
+      // A different course cannot change this module.
+      const wrongCourse = updateModuleVisibilityInDatabase(
         database,
         'course-b',
         'visibility-test-1',
         'visible',
-        )
+      )
 
-        expect(wrongCourse).toBe(false)
+      expect(wrongCourse).toBe(false)
 
-        // The correct course can make the module visible.
-        const updated = updateModuleVisibilityInDatabase(
+      // The correct course can make the module visible.
+      const updated = updateModuleVisibilityInDatabase(
         database,
         'course-a',
         'visibility-test-1',
         'visible',
-        )
+      )
 
-        expect(updated).toBe(true)
+      expect(updated).toBe(true)
 
-        // Read the saved visibility from SQLite.
-        const modules = getModulesFromDatabase(database, 'course-a')
+      // Read the saved visibility from SQLite.
+      const modules = getModulesFromDatabase(database, 'course-a')
 
-        expect(modules).toHaveLength(1)
-        expect(modules[0]?.visibility).toBe('visible')
+      expect(modules).toHaveLength(1)
+      expect(modules[0]?.visibility).toBe('visible')
     } finally {
-        // Close the database after testing.
-        database.close()
+      // Close the database after testing.
+      database.close()
     }
   })
 })
