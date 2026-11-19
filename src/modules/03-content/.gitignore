@@ -1,2 +1,5 @@
 /doxygen-output/
 /.c3l-content-uploads/
+
+# Sprint 3: Local SQLite database files
+/.c3l-content-data/
