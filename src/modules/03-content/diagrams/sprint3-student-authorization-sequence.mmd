@@ -1,0 +1,43 @@
+sequenceDiagram
+    autonumber
+    actor Student
+    participant Route as Student Content Route
+    participant Auth as Identity Adapter
+    participant Identity as Module 1 Identity
+    participant Policy as Course Authorization Policy
+    participant Course as Course Permission Adapter
+    participant Modules as Module Retrieval
+
+    Note over Route,Course: External integrations pending verification
+
+    Student->>Route: GET student modules
+    Route->>Auth: Authenticate request
+    Auth->>Identity: Validate session
+    Identity-->>Auth: Identity result
+
+    alt Invalid or missing session
+        Auth-->>Route: Authentication denied
+        Route-->>Student: 401 Unauthorized
+    else Valid active student
+        Auth-->>Route: Authenticated student
+        Route->>Policy: Authorize course access
+        Policy->>Course: Check course and enrollment
+        Course-->>Policy: Permission result
+
+        alt Course not found
+            Policy-->>Route: Course not found
+            Route-->>Student: 404 Not Found
+        else Student not enrolled
+            Policy-->>Route: Access denied
+            Route-->>Student: 403 Forbidden
+        else Permission lookup fails
+            Policy-->>Route: Service unavailable
+            Route-->>Student: 503 Service Unavailable
+        else Student authorized
+            Policy-->>Route: Access granted
+            Route->>Modules: Get accessible modules
+            Note over Modules: Existing retrieval path, SQLite integration pending
+            Modules-->>Route: Published and visible modules
+            Route-->>Student: 200 OK with modules array
+        end
+    end
