@@ -99,4 +99,3 @@ export function createIdentityAdapter(options: IdentityAdapterOptions): Identity
     },
   }
 }
-
