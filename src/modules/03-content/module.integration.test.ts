@@ -90,12 +90,26 @@ test('isolated trusted composition permits upload, publication and visibility', 
   }
 })
 
-test('mounted Module 3 homepage links to the management page', async () => {
+test('mounted Module 3 homepage links to the prototype and C3L modules', async () => {
   const app = await createApp()
   const home = await app.fetch(new Request('http://localhost/03-content/'))
   expect(home.status).toBe(200)
   expect(home.headers.get('content-type')).toContain('text/html')
-  expect(await home.text()).toContain('href="/03-content/manage"')
+  const homepage = await home.text()
+  expect(homepage).toContain('<h1>Module 3: Content Management</h1>')
+  expect(homepage).toContain('Instructor Workspace')
+  expect(homepage).toContain('Sprint-2 prototype')
+  expect(homepage).toContain('This workspace opens without sign-in.')
+  expect(homepage).toContain('href="/03-content/manage"')
+  expect(homepage).toContain('href="/03-content/hello"')
+  expect(homepage).toContain('href="/"')
+  expect(homepage).toContain('href="/01-identity-users"')
+  expect(homepage).toContain('href="/02-courses"')
+
+  const studentCard = homepage.match(/<section[^>]+aria-labelledby="student-heading">([\s\S]*?)<\/section>/)?.[1] ?? ''
+  expect(studentCard).toContain('Student Learning')
+  expect(studentCard).toContain('Protected student access is still in development.')
+  expect(studentCard).toContain('href="/03-content/learn"')
 
   const management = await app.fetch(new Request('http://localhost/03-content/manage?courseId=DEMO-101'))
   expect(management.status).toBe(200)
