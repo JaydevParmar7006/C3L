@@ -109,7 +109,7 @@ test('mounted Module 3 homepage links to the prototype and C3L modules', async (
   const studentCard = homepage.match(/<section[^>]+aria-labelledby="student-heading">([\s\S]*?)<\/section>/)?.[1] ?? ''
   expect(studentCard).toContain('Student Learning')
   expect(studentCard).toContain('Protected student access is still in development.')
-  expect(studentCard).not.toContain('href=')
+  expect(studentCard).toContain('href="/03-content/learn"')
 
   const management = await app.fetch(new Request('http://localhost/03-content/manage?courseId=DEMO-101'))
   expect(management.status).toBe(200)

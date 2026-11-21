@@ -14,6 +14,7 @@
 //   4. Save. Your new page is at  http://localhost:3000/03-content/<your-address>
 import { Elysia } from 'elysia'
 import { defineModule, moduleBase } from '../../core/defineModule'
+import { studentUiRoutes } from './content.student.ui'
 import { contentUiRoutes } from './content.ui'
 import { moduleCreateRoutes } from './module.create.routes'
 import { moduleListRoutes } from './module.list.routes'
@@ -32,6 +33,7 @@ export default defineModule({
     .use(moduleListRoutes)
     .use(moduleOrganizeRoutes)
     .use(contentUiRoutes)
+    .use(studentUiRoutes)
     // Sprint 2: Publishing and visibility routes.
     // Deny mutations until trusted instructor authorization is integrated.
     .use(createModuleAccessRoutes())
@@ -98,6 +100,7 @@ export default defineModule({
         <h2 id="student-heading">Student Learning</h2>
         <p>This space will give enrolled students access to course materials made available to them.</p>
         <p class="status"><strong>Protected student access is still in development.</strong></p>
+        <a class="action" href="${base}/learn">Open Student Learning</a>
       </section>
     </div>
     <p class="demo"><a href="${base}/hello">Demo page</a></p>
