@@ -1,4 +1,3 @@
-
 /**
  * Module 3: Content Management
  * File: module.service.ts
@@ -18,17 +17,13 @@ import {
   getModulesFromDatabase,
 } from './content.database'
 
-import type {
-  CreateLearningModuleInput,
-  LearningModule,
-} from './module.model'
+import type { CreateLearningModuleInput, LearningModule } from './module.model'
 
 import { validateCreateLearningModule } from './module.validation'
 
 // Sprint 3: Use in-memory SQLite during tests.
 // Use persistent SQLite during normal application runs.
-const databasePath =
-  Bun.env.NODE_ENV === 'test' ? ':memory:' : undefined
+const databasePath = Bun.env.NODE_ENV === 'test' ? ':memory:' : undefined
 
 export const contentDatabase = openContentDatabase(databasePath)
 
@@ -42,9 +37,7 @@ createContentTables(contentDatabase)
  * @returns The newly created learning module.
  * @throws Error if validation fails.
  */
-export function createLearningModule(
-  input: CreateLearningModuleInput,
-): LearningModule {
+export function createLearningModule(input: CreateLearningModuleInput): LearningModule {
   // Validate input before creating anything.
   const validation = validateCreateLearningModule(input)
 
@@ -52,9 +45,6 @@ export function createLearningModule(
   if (!validation.valid) {
     throw new Error(validation.errors.join(', '))
   }
-
-  // Build the new learning-module object.
-
 
   // Build the new learning-module object.
   const newModule: LearningModule = {
@@ -75,7 +65,8 @@ export function createLearningModule(
   saveModuleToDatabase(contentDatabase, newModule)
 
   // Return the created module to the caller.
-  return newModule}
+  return newModule
+}
 
 /**
  * Returns learning modules belonging to a course.
@@ -86,7 +77,6 @@ export function createLearningModule(
  * @param courseId - Course identifier to filter by.
  * @returns Matching learning modules.
  */
-export function getLearningModulesByCourse(
-  courseId: string,
-): LearningModule[] {
-  return getModulesFromDatabase(contentDatabase, courseId)}
+export function getLearningModulesByCourse(courseId: string): LearningModule[] {
+  return getModulesFromDatabase(contentDatabase, courseId)
+}

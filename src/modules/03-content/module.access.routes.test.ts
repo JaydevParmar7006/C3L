@@ -1,15 +1,9 @@
-
 import { describe, expect, test } from 'bun:test'
 import { createModuleAccessRoutes } from './module.access.routes'
-import {
-  createLearningModule,
-  getLearningModulesByCourse,
-} from './module.service'
+import { createLearningModule, getLearningModulesByCourse } from './module.service'
 
 function getStoredModule(courseId: string, moduleId: string) {
-  return getLearningModulesByCourse(courseId).find(
-    (item) => item.id === moduleId,
-  )
+  return getLearningModulesByCourse(courseId).find((item) => item.id === moduleId)
 }
 
 describe('M03-FR-005 and M03-FR-006 authorization', () => {
