@@ -36,22 +36,26 @@ export function createStudentContentRoutes(dependencies: StudentRouteDependencie
       return Response.json({ error: 'Course access denied.' }, { status: access.status })
     }
 
-    const modules = await getStudentAccessibleModules(
-      request,
-      params.courseId,
-      async (_request, courseId) => {
-        if (courseId !== access.course.id) return false
-
-        const rechecked = await authorizeCourseAccess(
+      const rechecked = await authorizeCourseAccess(
           authenticatedUser,
-          courseId,
+          params.courseId,
           'study',
           dependencies,
-        )
-        return rechecked.allowed
-      },
-    )
+      )
 
+      if (!rechecked.allowed) {
+          return Response.json(
+              { error: 'Course access denied.' },
+              { status: rechecked.status },
+          )
+      }
+
+      const modules = await getStudentAccessibleModules(
+          request,
+          params.courseId,
+          async (_request, courseId) =>
+              courseId === access.course.id && courseId === rechecked.course.id,
+      )
     return Response.json({ modules }, { status: 200 })
   })
 }
