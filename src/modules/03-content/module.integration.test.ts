@@ -9,6 +9,8 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { createLearningModule, getLearningModulesByCourse } from './module.service'
 import { createInstructorModuleRoutes } from './module.instructor.routes'
+import { setModulePublication } from './module.publication.service'
+import { setModuleVisibility } from './module.visibility.service'
 
 function createAuthorizedInstructorTestApp(...courseIds: string[]) {
   return new Elysia().group('/03-content', (scope) =>
@@ -280,7 +282,7 @@ test('authorized instructor API supports create then list with course isolation'
   expect(await afterInvalid.json()).toEqual({ modules: [created.module] })
 })
 
-test('mounted Module 3 instructor guard leaves public pages and the student API mount unchanged', async () => {
+test('mounted Module 3 keeps the homepage, demo, and student UI public', async () => {
   const app = await createApp()
   for (const [path, text] of [
     ['/03-content', 'Module 3: Content Management'],
@@ -292,8 +294,26 @@ test('mounted Module 3 instructor guard leaves public pages and the student API 
     expect(response.headers.get('content-type')).toContain('text/html')
     expect(await response.text()).toContain(text)
   }
-  const studentApi = await app.fetch(
-    new Request('http://localhost/03-content/api/courses/DEMO-101/student/modules'),
-  )
-  expect(studentApi.status).toBe(404)
+})
+
+test.each([
+  ['anonymous request', new Headers()],
+  ['forged identity and role headers', new Headers({ 'x-user-id': 'claimed-user', 'x-user-role': 'student' })],
+  ['arbitrary cookies', new Headers({ cookie: 'better-auth.session_token=unverified; role=student' })],
+])('mounted student API returns 401 without disclosing modules for %s', async (_label, headers) => {
+  const app = await createApp()
+  const courseId = `student-denial-${crypto.randomUUID()}`
+  const module = createLearningModule({ courseId, title: 'Protected student module' })
+  setModulePublication(courseId, module.id, true)
+  setModuleVisibility(courseId, module.id, 'visible')
+  expect(getLearningModulesByCourse(courseId)).toMatchObject([
+    { id: module.id, published: true, visibility: 'visible' },
+  ])
+
+  const url = `http://localhost/03-content/api/courses/${courseId}/student/modules`
+  const response = await app.fetch(new Request(url, { headers }))
+
+  expect(response.status).toBe(401)
+  expect(response.headers.get('content-type')).toContain('application/json')
+  expect(await response.json()).toEqual({ error: 'Authentication required.' })
 })

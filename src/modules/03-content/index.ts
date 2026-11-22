@@ -14,6 +14,8 @@
 //   4. Save. Your new page is at  http://localhost:3000/03-content/<your-address>
 import { Elysia } from 'elysia'
 import { defineModule, moduleBase } from '../../core/defineModule'
+import { createDenyAllCoursePermissions } from './content.policy'
+import { createStudentContentRoutes } from './content.student.routes'
 import { studentUiRoutes } from './content.student.ui'
 import { contentUiRoutes } from './content.ui'
 import { createInstructorModuleRoutes } from './module.instructor.routes'
@@ -31,6 +33,14 @@ export default defineModule({
     .use(createInstructorModuleRoutes())
     .use(contentUiRoutes)
     .use(studentUiRoutes)
+    // Temporary denial-only wiring until trusted identity and course permissions are available.
+    .use(
+      createStudentContentRoutes({
+        identity: { currentUser: async () => null },
+        courses: { getCourse: async () => null },
+        permissions: createDenyAllCoursePermissions(),
+      }),
+    )
     // Sprint 2: Publishing and visibility routes.
     // Deny mutations until trusted instructor authorization is integrated.
     .use(createModuleAccessRoutes())
