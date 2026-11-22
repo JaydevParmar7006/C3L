@@ -1,6 +1,12 @@
 
 import type { LearningModule } from './module.model'
-import { getLearningModulesByCourse } from './module.service'
+import {
+  contentDatabase,
+  getLearningModulesByCourse,
+} from './module.service'
+import {
+  updateModuleVisibilityInDatabase,
+} from './content.database'
 
 /**
  * M03-FR-006: Supported learning-module visibility states.
@@ -39,7 +45,21 @@ export function setModuleVisibility(
     return null
   }
 
-  module.visibility = visibility
+    // Sprint 3: Save the visibility change in SQLite.
+  const updated = updateModuleVisibilityInDatabase(
+    contentDatabase,
+    courseId,
+    moduleId,
+    visibility,
+  )
 
-  return { ...module }
+  if (!updated) {
+    return null
+  }
+
+  // Return the updated module.
+  return {
+    ...module,
+    visibility,
+  }
 }

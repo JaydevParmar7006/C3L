@@ -7,9 +7,16 @@
  * Create learning modules after validating their input.
  *
  * Storage:
- * Uses an in-memory array for the Sprint-1 prototype.
- * Data is lost when the server restarts.
+ * Uses SQLite for persistent learning-module storage.
+ * Modules remain available after server restarts.
  */
+
+import {
+  openContentDatabase,
+  createContentTables,
+  saveModuleToDatabase,
+  getModulesFromDatabase,
+} from './content.database'
 
 import type {
   CreateLearningModuleInput,
@@ -18,8 +25,15 @@ import type {
 
 import { validateCreateLearningModule } from './module.validation'
 
-// Temporary storage for learning modules.
-const learningModules: LearningModule[] = []
+// Sprint 3: Use in-memory SQLite during tests.
+// Use persistent SQLite during normal application runs.
+const databasePath =
+  Bun.env.NODE_ENV === 'test' ? ':memory:' : undefined
+
+export const contentDatabase = openContentDatabase(databasePath)
+
+// Ensure the learning_modules table exists.
+createContentTables(contentDatabase)
 
 /**
  * Creates a new learning module.
@@ -41,26 +55,27 @@ export function createLearningModule(
 
   // Build the new learning-module object.
 
+
+  // Build the new learning-module object.
   const newModule: LearningModule = {
-  id: crypto.randomUUID(),
-  courseId: input.courseId.trim(),
-  title: input.title.trim(),
-  description: input.description?.trim(),
-  week: input.week,
-  topic: input.topic?.trim(),
-  createdAt: new Date().toISOString(),
+    id: crypto.randomUUID(),
+    courseId: input.courseId.trim(),
+    title: input.title.trim(),
+    description: input.description?.trim(),
+    week: input.week,
+    topic: input.topic?.trim(),
+    createdAt: new Date().toISOString(),
 
-  // Sprint 2: Safe initial access state
-  published: false,
-  visibility: 'hidden',
-}
+    // Sprint 2: Safe initial access state.
+    published: false,
+    visibility: 'hidden',
+  }
 
-  // Save the new module in temporary memory.
-  learningModules.push(newModule)
+  // Sprint 3: Save the new module permanently in SQLite.
+  saveModuleToDatabase(contentDatabase, newModule)
 
   // Return the created module to the caller.
-  return newModule
-}
+  return newModule}
 
 /**
  * Returns learning modules belonging to a course.
@@ -74,7 +89,4 @@ export function createLearningModule(
 export function getLearningModulesByCourse(
   courseId: string,
 ): LearningModule[] {
-  return learningModules.filter(
-    (module) => module.courseId === courseId,
-  )
-}
+  return getModulesFromDatabase(contentDatabase, courseId)}

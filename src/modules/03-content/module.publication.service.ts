@@ -1,6 +1,13 @@
 
 import type { LearningModule } from './module.model'
-import { getLearningModulesByCourse } from './module.service'
+import {
+  contentDatabase,
+  getLearningModulesByCourse,
+} from './module.service'
+
+import {
+  updateModulePublicationInDatabase,
+} from './content.database'
 
 /**
  * M03-FR-005: Update the publication state of a learning module.
@@ -34,7 +41,19 @@ export function setModulePublication(
     return null
   }
 
-  module.published = published
+  const updated = updateModulePublicationInDatabase(
+    contentDatabase,
+    courseId,
+    moduleId,
+    published,
+  )
 
-  return { ...module }
+  if (!updated) {
+    return null
+  }
+
+  return {
+    ...module,
+    published,
+  }
 }
