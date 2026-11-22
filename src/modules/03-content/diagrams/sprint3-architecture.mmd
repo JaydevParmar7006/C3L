@@ -1,0 +1,39 @@
+
+flowchart TD
+    Instructor["Instructor"]
+    Student["Student"]
+    InstructorUI["Instructor Management UI - Jaydev"]
+    StudentUI["Student Learning UI - Jaydev"]
+
+    Identity["Module 1 Identity Service - Integration Pending"]
+    Course["Module 2 Course and Enrollment Data - Integration Pending"]
+
+    Auth["Content Identity Adapter - Harsh"]
+    Policy["Course Authorization Policy - Harsh"]
+    StudentRoutes["Student HTTP Routes - Harsh"]
+    Filter["Published and Visible Module Filter"]
+
+    ContentAPI["Module 3 Content APIs"]
+    Persistence["SQLite Persistence Layer - Megha"]
+    Storage["Existing In-Memory Retrieval"]
+    Integration["Route Mounting and Integration - Pending"]
+
+    Instructor --> InstructorUI
+    InstructorUI --> ContentAPI
+
+    Student --> StudentUI
+    StudentUI -.-> Integration
+    Integration -.-> StudentRoutes
+
+    StudentRoutes --> Auth
+    Auth -.-> Identity
+    StudentRoutes --> Policy
+    Policy -.-> Course
+
+    StudentRoutes --> Filter
+    Filter --> Storage
+
+    ContentAPI --> Persistence
+
+    classDef pending stroke-dasharray: 5 5
+    class Identity,Course,Integration pending
