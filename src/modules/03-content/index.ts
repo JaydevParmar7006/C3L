@@ -16,9 +16,7 @@ import { Elysia } from 'elysia'
 import { defineModule, moduleBase } from '../../core/defineModule'
 import { studentUiRoutes } from './content.student.ui'
 import { contentUiRoutes } from './content.ui'
-import { moduleCreateRoutes } from './module.create.routes'
-import { moduleListRoutes } from './module.list.routes'
-import { moduleOrganizeRoutes } from './module.organize.routes'
+import { createInstructorModuleRoutes } from './module.instructor.routes'
 import { createModuleAccessRoutes } from './module.access.routes'
 import { createMaterialUploadRoutes } from './material.upload.routes'
 
@@ -29,9 +27,8 @@ export default defineModule({
   description: 'Units, learning materials, publishing',
 
   router: new Elysia()
-    .use(moduleCreateRoutes)
-    .use(moduleListRoutes)
-    .use(moduleOrganizeRoutes)
+    // Creation and listing stay disabled until trusted instructor permissions are configured.
+    .use(createInstructorModuleRoutes())
     .use(contentUiRoutes)
     .use(studentUiRoutes)
     // Sprint 2: Publishing and visibility routes.
