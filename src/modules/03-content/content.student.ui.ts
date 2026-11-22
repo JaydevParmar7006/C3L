@@ -96,7 +96,7 @@ function studentPage(courseId: string): string {
       }
       showStatus('loading', 'Loading course content…');
       try {
-        const response = await fetch('${base}/api/courses/' + encodeURIComponent(courseId) + '/learning', {
+        const response = await fetch('${base}/api/courses/' + encodeURIComponent(courseId) + '/student/modules', {
           method: 'GET', credentials: 'same-origin', mode: 'same-origin', cache: 'no-store', redirect: 'error',
         });
         if (currentRequest !== requestNumber) return;
@@ -110,7 +110,7 @@ function studentPage(courseId: string): string {
           showStatus('error', 'The server returned an invalid module list.');
           return;
         }
-        const modules = data.modules.filter((module) => module.published !== false && module.visibility !== 'hidden');
+        const modules = data.modules.filter((module) => module.published === true && module.visibility === 'visible');
         for (const module of modules) {
           const item = document.createElement('li');
           const title = document.createElement('h3');

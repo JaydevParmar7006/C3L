@@ -64,19 +64,24 @@ async function startPage(fetch: (url: string, options: RequestInit) => Promise<R
 test('loads only the student API and renders confirmed module strings as text', async () => {
   const requests: { url: string; options: RequestInit }[] = []
   let payload: object = { modules: [
-    { title: '<img src=x>', description: '<b>Week one</b>', units: [{ title: 'Unverified unit' }] },
-    { title: 'Hidden module', visibility: 'hidden' },
-    { title: 'Unpublished module', published: false },
+    { title: '<img src=x>', description: '<b>Week one</b>', published: true, visibility: 'visible', units: [{ title: 'Unverified unit' }] },
+    { title: 'Hidden module', published: true, visibility: 'hidden' },
+    { title: 'Unpublished module', published: false, visibility: 'visible' },
+    { title: 'Missing publication', visibility: 'visible' },
+    { title: 'Missing visibility', published: true },
+    { title: 'Non-boolean publication', published: 'true', visibility: 'visible' },
+    { title: 'Unknown visibility', published: true, visibility: 'unknown' },
   ] }
-  const { form, status, list } = await startPage(async (url, options) => {
+  const { form, input, status, list } = await startPage(async (url, options) => {
     requests.push({ url, options })
     return Response.json(payload)
   })
+  input.value = 'COURSE/1 ?#%'
   form.fire('submit')
   expect(status.textContent).toBe('Loading course content…')
   expect(list.attributes.get('aria-busy')).toBe('true')
   await Bun.sleep(0)
-  expect(requests).toEqual([{ url: '/03-content/api/courses/COURSE%2F1/learning', options: {
+  expect(requests).toEqual([{ url: '/03-content/api/courses/COURSE%2F1%20%3F%23%25/student/modules', options: {
     method: 'GET', credentials: 'same-origin', mode: 'same-origin', cache: 'no-store', redirect: 'error',
   } }])
   expect(status.textContent).toBe('Loaded 1 learning module.')
@@ -96,7 +101,7 @@ test.each([
   [404, 'protected content endpoint is unavailable'], [503, 'permission service is unavailable'],
   [500, 'Could not load course content.'],
 ] as const)('HTTP %i clears previous results and never renders the error body', async (code, message) => {
-  const payload = { modules: [{ title: 'Protected module' }] }
+  const payload = { modules: [{ title: 'Protected module', published: true, visibility: 'visible' }] }
   let responseCode = 200
   let requestCount = 0
   const { form, status, list } = await startPage(async () => {
@@ -122,7 +127,7 @@ test('editing the course ID discards an in-flight response', async () => {
   form.fire('submit')
   input.value = 'OTHER'
   input.fire('input')
-  pending.resolve(Response.json({ modules: [{ title: 'Previous course' }] }))
+  pending.resolve(Response.json({ modules: [{ title: 'Previous course', published: true, visibility: 'visible' }] }))
   await Bun.sleep(0)
   expect(status.dataset.state).toBe('idle')
   expect(list.children).toHaveLength(0)
