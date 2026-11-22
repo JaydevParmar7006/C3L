@@ -87,7 +87,42 @@ describe('Module 3 student content HTTP routes', () => {
 
     expect(response.status).toBe(503)
   })
+  test('returns no modules when enrollment is revoked during authorization recheck', async () => {
+    let permissionChecks = 0
 
+    const app = createStudentContentRoutes({
+      identity: {
+        async currentUser() {
+          return student
+        },
+      },
+      courses: {
+        async getCourse(courseId) {
+          return {
+            id: courseId,
+            title: 'Test Course',
+            archived: false,
+          }
+        },
+      },
+      permissions: {
+        async canManage() {
+          return false
+        },
+        async canStudy() {
+          permissionChecks++
+          return permissionChecks === 1
+        },
+      },
+    })
+
+    const response = await app.handle(studentRequest())
+    const body = (await response.json()) as { modules?: unknown }
+
+    expect(permissionChecks).toBe(2)
+    expect(response.status).toBe(200)
+    expect(body.modules).toEqual([])
+  })
   test('returns a modules array for an authorized student', async () => {
     const response = await createTestApp().handle(studentRequest())
     const body = (await response.json()) as { modules?: unknown }
