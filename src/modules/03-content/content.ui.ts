@@ -41,14 +41,14 @@ function managementPage(courseId: string): string {
 <body><main>
   <nav aria-label="Main navigation"><a href="/03-content">Module 3 home</a><a href="/">C3L homepage</a></nav>
   <header><h1>Module 3 Content Management</h1><p class="lead">Create learning modules and organize your course by week or topic.</p></header>
-  <p class="notice" id="authorization-notice"><strong>Sprint-2 prototype.</strong> Trusted instructor authorization is still being integrated. The server currently denies publication, visibility changes, and material uploads.</p>
+  <p class="notice" id="authorization-notice"><strong>Trusted course authorization required.</strong> Creating, listing, and organizing modules, changing publication or visibility, and uploading materials are currently unavailable while instructor permissions are being integrated.</p>
   <section class="panel" aria-labelledby="course-heading">
     <h2 id="course-heading">Select a course</h2>
     <form id="course-form">
       <label for="course-id">Course ID<input id="course-id" name="courseId" required value="${escapeHtml(courseId)}" placeholder="DEMO-101"></label>
       <button type="submit">Load Modules</button>
     </form>
-    <p class="hint">Enter a course ID to manage its modules. Prototype data is lost when the server restarts.</p>
+    <p class="hint">Enter the course ID for the modules you want to manage.</p>
   </section>
   <div class="layout">
     <section class="panel" aria-labelledby="create-heading">

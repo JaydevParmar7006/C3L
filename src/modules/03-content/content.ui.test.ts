@@ -27,6 +27,8 @@ describe('Content management page HTML', () => {
   test('prefills an editable course input from the query', async () => {
     const html = await (await page('DEMO-101')).text()
     expect(html).toContain('name="courseId" required value="DEMO-101"')
+    expect(html).toContain('Enter the course ID for the modules you want to manage.')
+    expect(html).not.toContain('Prototype data is lost when the server restarts.')
     expect(html).toContain('Load Modules')
     expect(html).toContain('if (courseInput.value.trim()) void loadModules()')
   })
@@ -100,7 +102,11 @@ describe('Content management page HTML', () => {
 
   test('explains authorization limits and labels the upload form', async () => {
     const html = await (await page()).text()
-    expect(html).toContain('Trusted instructor authorization is still being integrated.')
+    expect(html).toContain('<strong>Trusted course authorization required.</strong>')
+    expect(html).toContain(
+      'Creating, listing, and organizing modules, changing publication or visibility, and uploading materials are currently unavailable while instructor permissions are being integrated.',
+    )
+    expect(html).not.toContain('Sprint-2 prototype.')
     expect(html).toContain('aria-describedby="authorization-notice"')
     expect(html).toContain('<label>Learning material')
     expect(html).toContain('name="file" type="file" required')
