@@ -1,7 +1,10 @@
-
 import { describe, expect, test } from 'bun:test'
 import { createModuleAccessRoutes } from './module.access.routes'
-import { createLearningModule } from './module.service'
+import { createLearningModule, getLearningModulesByCourse } from './module.service'
+
+function getStoredModule(courseId: string, moduleId: string) {
+  return getLearningModulesByCourse(courseId).find((item) => item.id === moduleId)
+}
 
 describe('M03-FR-005 and M03-FR-006 authorization', () => {
   test('publishing is denied without an authorization dependency', async () => {
@@ -24,7 +27,7 @@ describe('M03-FR-005 and M03-FR-006 authorization', () => {
     )
 
     expect(response.status).toBe(403)
-    expect(module.published).toBe(false)
+    expect(getStoredModule(module.courseId, module.id)?.published).toBe(false)
   })
 
   test('visibility changes are denied without an authorization dependency', async () => {
@@ -47,7 +50,7 @@ describe('M03-FR-005 and M03-FR-006 authorization', () => {
     )
 
     expect(response.status).toBe(403)
-    expect(module.visibility).toBe('hidden')
+    expect(getStoredModule(module.courseId, module.id)?.visibility).toBe('hidden')
   })
 
   test('client-supplied instructor role header does not bypass authorization', async () => {
@@ -73,7 +76,7 @@ describe('M03-FR-005 and M03-FR-006 authorization', () => {
     )
 
     expect(response.status).toBe(403)
-    expect(module.published).toBe(false)
+    expect(getStoredModule(module.courseId, module.id)?.published).toBe(false)
   })
 })
 
@@ -98,17 +101,20 @@ describe('M03-FR-005 publication changes', () => {
       }),
     )
 
-expect(publishResponse.status).toBe(200)
+    expect(publishResponse.status).toBe(200)
 
-const publishBody: unknown = await publishResponse.json()
+    const publishBody: unknown = await publishResponse.json()
 
-expect(publishBody).toMatchObject({
-  module: {
-    published: true,
-  },
-})
-    expect(module.published).toBe(true)
-    expect(module.visibility).toBe('hidden')
+    expect(publishBody).toMatchObject({
+      module: {
+        published: true,
+      },
+    })
+
+    const publishedModule = getStoredModule(module.courseId, module.id)
+
+    expect(publishedModule?.published).toBe(true)
+    expect(publishedModule?.visibility).toBe('hidden')
 
     const unpublishResponse = await app.handle(
       new Request(url, {
@@ -119,7 +125,10 @@ expect(publishBody).toMatchObject({
     )
 
     expect(unpublishResponse.status).toBe(200)
-    expect(module.published).toBe(false)
+
+    const unpublishedModule = getStoredModule(module.courseId, module.id)
+
+    expect(unpublishedModule?.published).toBe(false)
   })
 })
 
@@ -145,15 +154,19 @@ describe('M03-FR-006 visibility changes', () => {
     )
 
     expect(showResponse.status).toBe(200)
-   const showBody: unknown = await showResponse.json()
 
-expect(showBody).toMatchObject({
-  module: {
-    visibility: 'visible',
-  },
-})
-    expect(module.visibility).toBe('visible')
-    expect(module.published).toBe(false)
+    const showBody: unknown = await showResponse.json()
+
+    expect(showBody).toMatchObject({
+      module: {
+        visibility: 'visible',
+      },
+    })
+
+    const visibleModule = getStoredModule(module.courseId, module.id)
+
+    expect(visibleModule?.visibility).toBe('visible')
+    expect(visibleModule?.published).toBe(false)
 
     const hideResponse = await app.handle(
       new Request(url, {
@@ -164,7 +177,10 @@ expect(showBody).toMatchObject({
     )
 
     expect(hideResponse.status).toBe(200)
-    expect(module.visibility).toBe('hidden')
+
+    const hiddenModule = getStoredModule(module.courseId, module.id)
+
+    expect(hiddenModule?.visibility).toBe('hidden')
   })
 })
 
@@ -191,7 +207,7 @@ describe('M03-FR-005 and M03-FR-006 input validation', () => {
     )
 
     expect(response.status).toBe(400)
-    expect(module.published).toBe(false)
+    expect(getStoredModule(module.courseId, module.id)?.published).toBe(false)
   })
 
   test('rejects an unsupported visibility value', async () => {
@@ -216,7 +232,7 @@ describe('M03-FR-005 and M03-FR-006 input validation', () => {
     )
 
     expect(response.status).toBe(400)
-    expect(module.visibility).toBe('hidden')
+    expect(getStoredModule(module.courseId, module.id)?.visibility).toBe('hidden')
   })
 
   test('rejects publishing a module through the wrong course', async () => {
@@ -241,7 +257,7 @@ describe('M03-FR-005 and M03-FR-006 input validation', () => {
     )
 
     expect(response.status).toBe(404)
-    expect(module.published).toBe(false)
+    expect(getStoredModule(module.courseId, module.id)?.published).toBe(false)
   })
 
   test('rejects visibility changes through the wrong course', async () => {
@@ -266,6 +282,6 @@ describe('M03-FR-005 and M03-FR-006 input validation', () => {
     )
 
     expect(response.status).toBe(404)
-    expect(module.visibility).toBe('hidden')
+    expect(getStoredModule(module.courseId, module.id)?.visibility).toBe('hidden')
   })
 })
