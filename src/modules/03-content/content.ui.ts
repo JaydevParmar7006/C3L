@@ -1,5 +1,6 @@
 import { Elysia } from 'elysia'
 import { escapeHtml } from '../../core/pages'
+import { MAX_MATERIAL_SIZE } from './material.validation'
 
 function managementPage(courseId: string): string {
   return `<!doctype html>
@@ -16,6 +17,7 @@ function managementPage(courseId: string): string {
     a { color: #174db5; } h1 { line-height: 1.2; margin-bottom: 12px; }
     h2 { margin-top: 0; } .lead, .hint { color: #52647c; }
     .layout { display: grid; grid-template-columns: minmax(260px, 1fr) minmax(0, 2fr); gap: 24px; align-items: start; }
+    .notice { border-inline-start: 4px solid #174db5; background: #e8f0ff; padding: 12px 16px; }
     .panel { background: white; border: 1px solid #d8e1ee; border-radius: 12px; padding: 24px; margin: 20px 0; }
     .layout .panel { margin: 0; } label { display: block; font-weight: 600; margin-bottom: 16px; }
     input, textarea, button { font: inherit; border-radius: 6px; }
@@ -27,6 +29,10 @@ function managementPage(courseId: string): string {
     .filters .actions { grid-column: 1 / -1; } #modules { list-style: none; padding: 0; }
     #modules li { border-top: 1px solid #d8e1ee; padding: 16px 0; overflow-wrap: anywhere; }
     #modules h3 { margin: 0 0 8px; } #modules p { margin: 6px 0; white-space: pre-wrap; }
+    .module-controls { min-inline-size: 0; margin: 12px 0 0; padding: 0; border: 0; }
+    .module-controls legend { font-weight: 600; margin-bottom: 8px; }
+    .upload-form { margin-top: 16px; }
+    .upload-form input { min-width: 0; }
     .feedback { min-height: 1.6em; overflow-wrap: anywhere; } .feedback[data-kind="error"] { color: #a51b26; }
     .feedback[data-kind="success"] { color: #17643b; }
     @media (max-width: 720px) { .layout, .filters { grid-template-columns: 1fr; } main { padding: 24px 14px; } .panel { padding: 18px; } }
@@ -35,13 +41,14 @@ function managementPage(courseId: string): string {
 <body><main>
   <nav aria-label="Main navigation"><a href="/03-content">Module 3 home</a><a href="/">C3L homepage</a></nav>
   <header><h1>Module 3 Content Management</h1><p class="lead">Create learning modules and organize your course by week or topic.</p></header>
+  <p class="notice" id="authorization-notice"><strong>Trusted course authorization required.</strong> Creating, listing, and organizing modules, changing publication or visibility, and uploading materials are currently unavailable while instructor permissions are being integrated.</p>
   <section class="panel" aria-labelledby="course-heading">
     <h2 id="course-heading">Select a course</h2>
     <form id="course-form">
       <label for="course-id">Course ID<input id="course-id" name="courseId" required value="${escapeHtml(courseId)}" placeholder="DEMO-101"></label>
       <button type="submit">Load Modules</button>
     </form>
-    <p class="hint">Enter a course ID to manage its modules. Prototype data is lost when the server restarts.</p>
+    <p class="hint">Enter the course ID for the modules you want to manage.</p>
   </section>
   <div class="layout">
     <section class="panel" aria-labelledby="create-heading">
@@ -65,6 +72,24 @@ function managementPage(courseId: string): string {
       </form>
       <p id="list-status" class="feedback" role="status" aria-live="polite">Enter a course ID and select Load Modules.</p>
       <ul id="modules" aria-label="Course learning modules"></ul>
+      <template id="module-actions">
+        <p class="module-state"></p>
+        <fieldset class="module-controls" aria-describedby="authorization-notice">
+          <legend>Instructor actions</legend>
+          <div class="actions">
+            <button class="publication secondary" type="button">Publish</button>
+            <button class="visibility secondary" type="button">Make visible</button>
+          </div>
+          <form class="upload-form" enctype="multipart/form-data">
+            <label>Learning material
+              <input name="file" type="file" required accept="application/pdf,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document,video/mp4,video/webm">
+            </label>
+            <p class="hint">PDF, DOC, DOCX, MP4 or WebM. Maximum 20 MiB.</p>
+            <button type="submit">Upload material</button>
+          </form>
+        </fieldset>
+        <p class="feedback module-feedback" role="status" aria-live="polite"></p>
+      </template>
     </section>
   </div>
 </main>
@@ -101,19 +126,105 @@ function managementPage(courseId: string): string {
     return '/03-content/api/courses/' + encodeURIComponent(id) + '/modules';
   }
   async function requestJson(url, options) {
-    const response = await fetch(url, options);
-    let data;
-    try { data = await response.json(); }
-    catch { throw new Error('The server returned an unreadable response. Please try again.'); }
+    let response;
+    try { response = await fetch(url, { ...options, credentials: 'same-origin' }); }
+    catch { throw new Error('Could not reach the server. Check your connection and try again.'); }
+    const data = await response.json().catch(() => null);
     if (!response.ok) {
-      throw new Error(data && typeof data.error === 'string' ? data.error : 'Request failed (' + response.status + ').');
+      const fallback = {
+        400: 'Check the submitted values and try again.',
+        401: 'Sign in and try again.',
+        403: 'Instructor authorization required.',
+        404: 'The requested module or resource was not found.',
+      }[response.status] ?? 'The server could not complete the request. Please try again.';
+      const message = typeof data?.error === 'string' && data.error.trim() ? data.error : fallback;
+      throw new Error(message + ' (HTTP ' + response.status + ')');
     }
+    if (!data) throw new Error('The server returned an unreadable response. Please try again.');
     return data;
   }
   function errorText(error) {
     return error instanceof Error ? error.message : 'Request failed. Please try again.';
   }
-  function renderModules(modules) {
+  function addModuleActions(item, id, module) {
+    item.append(byId('module-actions').content.cloneNode(true));
+    const state = item.querySelector('.module-state');
+    const controls = item.querySelector('.module-controls');
+    const publication = item.querySelector('.publication');
+    const visibility = item.querySelector('.visibility');
+    const form = item.querySelector('.upload-form');
+    const fileInput = form.elements.namedItem('file');
+    const status = item.querySelector('.module-feedback');
+    const url = apiUrl(id) + '/' + encodeURIComponent(module.id);
+
+    function updateState() {
+      state.textContent = (module.published ? 'Published' : 'Unpublished') + ' · ' +
+        (module.visibility === 'visible' ? 'Visible' : 'Hidden');
+      publication.textContent = module.published ? 'Unpublish' : 'Publish';
+      visibility.textContent = module.visibility === 'visible' ? 'Hide' : 'Make visible';
+    }
+    async function runAction(trigger, pending, action) {
+      if (controls.disabled) return;
+      const restoreFocus = item.contains(document.activeElement);
+      controls.disabled = true;
+      status.dataset.kind = '';
+      status.textContent = pending;
+      try {
+        status.textContent = await action();
+        status.dataset.kind = 'success';
+      } catch (error) {
+        status.textContent = errorText(error);
+        status.dataset.kind = 'error';
+      } finally {
+        controls.disabled = false;
+        if (restoreFocus && item.isConnected && document.activeElement === document.body) trigger.focus();
+      }
+    }
+    function changeState(trigger, path, field, value, isValid, message) {
+      void runAction(trigger, 'Saving change…', async () => {
+        const data = await requestJson(url + '/' + path, {
+          method: 'PATCH', headers: { 'content-type': 'application/json' },
+          body: JSON.stringify({ [field]: value }),
+        });
+        if (data.module?.id !== module.id || !isValid(data.module[field])) {
+          throw new Error('The server did not confirm the module change. Reload the module list to check its status.');
+        }
+        module[field] = data.module[field];
+        updateState();
+        if (!item.isConnected && courseInput.value.trim() === id) await loadModules();
+        return message;
+      });
+    }
+    publication.addEventListener('click', () => {
+      changeState(publication, 'publication', 'published', !module.published,
+        (value) => typeof value === 'boolean', 'Publication status updated.');
+    });
+    visibility.addEventListener('click', () => {
+      changeState(visibility, 'visibility', 'visibility', module.visibility === 'visible' ? 'hidden' : 'visible',
+        (value) => value === 'visible' || value === 'hidden', 'Visibility updated.');
+    });
+    form.addEventListener('submit', (event) => {
+      event.preventDefault();
+      const file = fileInput.files[0];
+      void runAction(event.submitter ?? fileInput, 'Uploading material…', async () => {
+        if (!file) throw new Error('Choose a file to upload.');
+        if (file.size === 0) throw new Error('Uploaded file cannot be empty.');
+        if (file.size > ${MAX_MATERIAL_SIZE}) throw new Error('The file exceeds the 20 MiB limit.');
+        const allowedTypes = fileInput.accept.split(',');
+        if (!allowedTypes.includes(file.type.toLowerCase())) throw new Error('Unsupported file type.');
+        const body = new FormData();
+        body.append('file', file);
+        const data = await requestJson(url + '/materials', { method: 'POST', body });
+        if (data.material?.moduleId !== module.id || typeof data.material.filename !== 'string') {
+          throw new Error('The server did not confirm the upload.');
+        }
+        form.reset();
+        return 'Uploaded: ' + data.material.filename;
+      });
+    });
+    updateState();
+  }
+  function renderModules(modules, id) {
     list.replaceChildren();
     for (const module of modules) {
       const item = document.createElement('li');
@@ -131,6 +242,7 @@ function managementPage(courseId: string): string {
       const date = new Date(module.createdAt);
       created.textContent = 'Created: ' + (Number.isNaN(date.getTime()) ? 'Unknown date' : date.toLocaleString());
       item.append(details, created);
+      addModuleActions(item, id, module);
       list.append(item);
     }
   }
@@ -150,7 +262,7 @@ function managementPage(courseId: string): string {
       const data = await requestJson(apiUrl(id) + '/organized?' + query.toString());
       if (currentRequest !== listRequest) return;
       if (!data || !Array.isArray(data.modules)) throw new Error('The server returned an invalid module list.');
-      renderModules(data.modules);
+      renderModules(data.modules, id);
       feedback('list-status', data.modules.length ? data.modules.length + ' module(s) loaded.' : 'No modules match this course and filters.');
     } catch (error) {
       if (currentRequest === listRequest) {
@@ -199,6 +311,7 @@ function managementPage(courseId: string): string {
       await requestJson(apiUrl(id), {
         method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body),
       });
+      if (courseInput.value.trim() !== id) return;
       byId('create-form').reset();
       feedback('create-status', 'Module created successfully for ' + id + '.', 'success');
       // Refresh the current course; active filters may hide the new module.
