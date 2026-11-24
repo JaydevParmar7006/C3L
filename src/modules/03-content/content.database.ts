@@ -1,9 +1,10 @@
+
 /**
  * Module 3: Content Management
  * Sprint 3: SQLite Database
  *
  * This file helps us connect to the database.
- * The database will store our learning module information.
+ * The database stores learning modules and learning units.
  */
 
 // Import SQLite from Bun.
@@ -13,6 +14,7 @@ import { Database } from 'bun:sqlite'
 import { mkdirSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 import type { LearningModule } from './module.model'
+import type { LearningUnit } from './unit.model'
 
 // Set the location where our database file will be saved.
 const defaultDatabasePath = join(import.meta.dir, '.c3l-content-data', 'content.sqlite')
@@ -45,13 +47,13 @@ export function openContentDatabase(databasePath: string = defaultDatabasePath):
 }
 
 /**
- * Create the table for learning modules.
+ * Create the tables for learning modules and learning units.
  *
- * This table will store module information
- * even after the server is restarted.
+ * Learning units belong to a parent learning module.
+ * Units inherit their parent module's week and topic organization.
  */
 export function createContentTables(database: Database): void {
-  // Create the table only if it does not already exist.
+  // Preserve the existing learning modules table.
   database.exec(`
     CREATE TABLE IF NOT EXISTS learning_modules (
       id TEXT PRIMARY KEY,
@@ -67,6 +69,35 @@ export function createContentTables(database: Database): void {
       visibility TEXT NOT NULL DEFAULT 'hidden'
         CHECK (visibility IN ('visible', 'hidden'))
     )
+  `)
+
+  // Support the combined course and module foreign key.
+  database.exec(`
+    CREATE UNIQUE INDEX IF NOT EXISTS
+      idx_learning_modules_course_module
+    ON learning_modules (course_id, id)
+  `)
+
+  // Create a separate table for learning units.
+  database.exec(`
+    CREATE TABLE IF NOT EXISTS learning_units (
+      id TEXT PRIMARY KEY,
+      course_id TEXT NOT NULL,
+      module_id TEXT NOT NULL,
+      title TEXT NOT NULL CHECK (length(trim(title)) > 0),
+      description TEXT,
+      created_at TEXT NOT NULL,
+
+      FOREIGN KEY (course_id, module_id)
+        REFERENCES learning_modules (course_id, id)
+    )
+  `)
+
+  // Improve unit retrieval by course and parent module.
+  database.exec(`
+    CREATE INDEX IF NOT EXISTS
+      idx_learning_units_course_module
+    ON learning_units (course_id, module_id)
   `)
 }
 
@@ -188,9 +219,9 @@ export function updateModulePublicationInDatabase(
 }
 
 /**
- * Update the visibility of a learning module.
+ * Update the visibility state of a learning module.
  *
- * This function saves the new visibility in SQLite.
+ * This function saves the new state in SQLite.
  * It only updates a module in the correct course.
  */
 export function updateModuleVisibilityInDatabase(
@@ -210,4 +241,96 @@ export function updateModuleVisibilityInDatabase(
 
   // Return true if a module was updated.
   return result.changes === 1
+}
+
+
+/**
+ * Save a learning unit in the database.
+ *
+ * The foreign key ensures that the parent module
+ * belongs to the correct course.
+ */
+export function saveUnitToDatabase(
+  database: Database,
+  unit: LearningUnit,
+): void {
+  database
+    .query(`
+      INSERT INTO learning_units (
+        id,
+        course_id,
+        module_id,
+        title,
+        description,
+        created_at
+      )
+      VALUES (?, ?, ?, ?, ?, ?)
+    `)
+    .run(
+      unit.id,
+      unit.courseId,
+      unit.moduleId,
+      unit.title,
+      unit.description ?? null,
+      unit.createdAt,
+    )
+}
+
+/**
+ * Retrieve learning units belonging to a specific module.
+ *
+ * Units inherit week and topic from their parent module.
+ * Both course ID and module ID are checked for isolation.
+ */
+export function getUnitsFromDatabase(
+  database: Database,
+  courseId: string,
+  moduleId: string,
+): LearningUnit[] {
+  const rows = database
+    .query(`
+      SELECT
+        u.id,
+        u.course_id,
+        u.module_id,
+        u.title,
+        u.description,
+        u.created_at,
+        m.week,
+        m.topic
+      FROM learning_units AS u
+      INNER JOIN learning_modules AS m
+        ON u.module_id = m.id
+        AND u.course_id = m.course_id
+      WHERE u.course_id = ?
+        AND u.module_id = ?
+      ORDER BY u.created_at, u.rowid
+    `)
+    .all(courseId, moduleId) as Array<{
+    id: string
+    course_id: string
+    module_id: string
+    title: string
+    description: string | null
+    created_at: string
+    week: number | null
+    topic: string | null
+  }>
+
+  return rows.map((row) => ({
+    id: row.id,
+    courseId: row.course_id,
+    moduleId: row.module_id,
+    title: row.title,
+    ...(row.description !== null && {
+      description: row.description,
+    }),
+    createdAt: row.created_at,
+    ...(row.week !== null && {
+      week: row.week,
+    }),
+    ...(row.topic !== null && {
+      topic: row.topic,
+    }),
+  }))
 }
