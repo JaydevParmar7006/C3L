@@ -198,6 +198,12 @@ test('loopback HTTP demo supports the instructor-to-student workflow in isolated
         expect(html).toContain('value="DEMO-101"')
         expect(html).not.toContain('OTHER-101')
         if (path === '/manage') expect(html).toContain('aria-label="Add Learning Unit"')
+        if (path === '/learn') {
+          expect(html).toContain('Refresh Content')
+          expect(html).toContain('const showResources = true;')
+          expect(html).toContain('Your demo courses')
+          expect(html).not.toContain('Add Learning Unit')
+        }
         expect((await requestPage(`${base}${path}?courseId=OTHER-101`)).status).toBe(403)
       }
 
@@ -344,6 +350,8 @@ test('loopback HTTP demo supports the instructor-to-student workflow in isolated
       await change('publication', { published: true })
       await change('visibility', { visibility: 'hidden' })
       expect(await readStudent()).toEqual([])
+      expect((await asStudent(`${studentModulePath}/units`)).status).toBe(404)
+      expect((await asStudent(`${studentModulePath}/materials`)).status).toBe(404)
       expect(getLearningModulesByCourse(courseId)).toContainEqual(standardFixture)
       expect(getLearningModulesByCourse(courseId).some(({ id }) => id === module.id)).toBe(false)
 
@@ -432,8 +440,16 @@ test('demo modules, access state, and uploaded files survive a process restart',
       const materials = await asInstructor(`${modulePath}/materials`)
       expect(materials.status).toBe(200)
       expect(await materials.json()).toEqual({ materials: [saved.material] })
+      const studentModulePath = `${course}/student/modules/${saved.module.id}`
+      const studentUnits = await asStudent(`${studentModulePath}/units`)
+      expect(studentUnits.status).toBe(200)
+      expect(await studentUnits.json()).toEqual({ units: [saved.unit] })
+      const studentMaterials = await asStudent(`${studentModulePath}/materials`)
+      expect(studentMaterials.status).toBe(200)
+      const { storedFilename, ...publicMaterial } = saved.material
+      expect(await studentMaterials.json()).toEqual({ materials: [publicMaterial] })
       expect(
-        await readFile(join(directory, 'demo-uploads', saved.material.storedFilename), 'utf8'),
+        await readFile(join(directory, 'demo-uploads', storedFilename), 'utf8'),
       ).toBe(contents)
     })
   })

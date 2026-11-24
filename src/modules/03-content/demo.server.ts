@@ -3,7 +3,7 @@ import { Elysia } from 'elysia'
 import { createContentTables, openContentDatabase } from './content.database'
 import { createStudentResourceRoutes } from './content.student.resources.routes'
 import { createStudentContentRoutes } from './content.student.routes'
-import { studentUiRoutes } from './content.student.ui'
+import { createStudentUiRoutes } from './content.student.ui'
 import { createContentUiRoutes } from './content.ui'
 import { createDemoAuth, demoCourse } from './demo.auth'
 import {
@@ -133,7 +133,7 @@ export function startContentDemo(
             { parse: 'none' },
           )
           .use(createContentUiRoutes({ showResources: true }))
-          .use(studentUiRoutes)
+          .use(createStudentUiRoutes({ showResources: true }))
           .use(createInstructorModuleRoutes(authorizeInstructor))
           .use(createModuleAccessRoutes({ authorizeInstructor }))
           .use(createUnitRoutes({ authorizeInstructor }))

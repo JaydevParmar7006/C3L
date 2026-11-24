@@ -25,7 +25,9 @@ After signing in, select the assigned or enrolled course from the dashboard. Use
 
 In the Instructor Workspace, each module has an **Add Learning Unit** form and lists its units and uploaded materials. The material list refreshes after an upload and shows the original filename, media type, and size. Uploads belong to the module.
 
-Modules, their publication and visibility settings, units, and material metadata persist in `.c3l-content-data/demo.sqlite`. Uploaded files persist in `.c3l-content-data/demo-uploads/`. Student unit and material browsing remains API-only for published, visible modules. The demo has no student download endpoint.
+In Student Learning, enrolled students can browse published, visible modules ordered by week and topic. Each module shows its own units and material metadata. Select **Refresh Content** after an instructor changes a module. The demo has no student download endpoint.
+
+Modules, their publication and visibility settings, units, and material metadata persist in `.c3l-content-data/demo.sqlite`. Uploaded files persist in `.c3l-content-data/demo-uploads/`.
 
 ## Reset demo data
 
