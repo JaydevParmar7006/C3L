@@ -1,4 +1,3 @@
-
 /**
  * Module 3: Content Management
  * File: module.service.ts
@@ -7,19 +6,44 @@
  * Create learning modules after validating their input.
  *
  * Storage:
- * Uses an in-memory array for the Sprint-1 prototype.
- * Data is lost when the server restarts.
+ * Uses SQLite for persistent learning-module storage.
+ * Modules remain available after server restarts.
  */
 
-import type {
-  CreateLearningModuleInput,
-  LearningModule,
-} from './module.model'
+import type { Database } from 'bun:sqlite'
+import { AsyncLocalStorage } from 'node:async_hooks'
+import {
+  openContentDatabase,
+  createContentTables,
+  saveModuleToDatabase,
+  getModulesFromDatabase,
+} from './content.database'
+
+import type { CreateLearningModuleInput, LearningModule } from './module.model'
 
 import { validateCreateLearningModule } from './module.validation'
 
-// Temporary storage for learning modules.
-const learningModules: LearningModule[] = []
+// Keep the usual database path and open it only for callers without a scoped database.
+const databasePath = Bun.env.NODE_ENV === 'test' ? ':memory:' : undefined
+
+const scopedDatabase = new AsyncLocalStorage<Database>()
+let defaultDatabase: Database | undefined
+
+export function withContentDatabase<T>(database: Database, run: () => T): T {
+  return scopedDatabase.run(database, run)
+}
+
+export function getContentDatabase(): Database {
+  const database = scopedDatabase.getStore()
+  if (database) return database
+
+  if (!defaultDatabase) {
+    const opened = openContentDatabase(databasePath)
+    createContentTables(opened)
+    defaultDatabase = opened
+  }
+  return defaultDatabase
+}
 
 /**
  * Creates a new learning module.
@@ -28,9 +52,7 @@ const learningModules: LearningModule[] = []
  * @returns The newly created learning module.
  * @throws Error if validation fails.
  */
-export function createLearningModule(
-  input: CreateLearningModuleInput,
-): LearningModule {
+export function createLearningModule(input: CreateLearningModuleInput): LearningModule {
   // Validate input before creating anything.
   const validation = validateCreateLearningModule(input)
 
@@ -40,23 +62,22 @@ export function createLearningModule(
   }
 
   // Build the new learning-module object.
-
   const newModule: LearningModule = {
-  id: crypto.randomUUID(),
-  courseId: input.courseId.trim(),
-  title: input.title.trim(),
-  description: input.description?.trim(),
-  week: input.week,
-  topic: input.topic?.trim(),
-  createdAt: new Date().toISOString(),
+    id: crypto.randomUUID(),
+    courseId: input.courseId.trim(),
+    title: input.title.trim(),
+    description: input.description?.trim(),
+    week: input.week,
+    topic: input.topic?.trim(),
+    createdAt: new Date().toISOString(),
 
-  // Sprint 2: Safe initial access state
-  published: false,
-  visibility: 'hidden',
-}
+    // Sprint 2: Safe initial access state.
+    published: false,
+    visibility: 'hidden',
+  }
 
-  // Save the new module in temporary memory.
-  learningModules.push(newModule)
+  // Sprint 3: Save the new module permanently in SQLite.
+  saveModuleToDatabase(getContentDatabase(), newModule)
 
   // Return the created module to the caller.
   return newModule
@@ -71,10 +92,6 @@ export function createLearningModule(
  * @param courseId - Course identifier to filter by.
  * @returns Matching learning modules.
  */
-export function getLearningModulesByCourse(
-  courseId: string,
-): LearningModule[] {
-  return learningModules.filter(
-    (module) => module.courseId === courseId,
-  )
+export function getLearningModulesByCourse(courseId: string): LearningModule[] {
+  return getModulesFromDatabase(getContentDatabase(), courseId)
 }

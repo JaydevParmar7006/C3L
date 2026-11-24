@@ -7,17 +7,102 @@ import { createMaterialUploadRoutes } from './material.upload.routes'
 import { mkdtemp, readdir, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
+import { createLearningModule, getLearningModulesByCourse } from './module.service'
+import { createInstructorModuleRoutes } from './module.instructor.routes'
+import { setModulePublication } from './module.publication.service'
+import { setModuleVisibility } from './module.visibility.service'
+
+function createAuthorizedInstructorTestApp(...courseIds: string[]) {
+  return new Elysia().group('/03-content', (scope) =>
+    scope.use(createInstructorModuleRoutes((_request, courseId) => courseIds.includes(courseId))),
+  )
+}
+
+test('issue #22: mounted module creation denies anonymous requests without writing', async () => {
+  const app = await createApp()
+  const courseId = `issue-22-create-${crypto.randomUUID()}`
+  const url = `http://localhost/03-content/api/courses/${courseId}/modules`
+  const response = await app.fetch(new Request(url, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ title: 'Anonymous creation regression fixture' }),
+  }))
+
+  // Report the status and the storage outcome together if either regresses.
+  expect({
+    status: response.status,
+    modules: getLearningModulesByCourse(courseId),
+  }).toEqual({
+    status: 403,
+    modules: [],
+  })
+  expect(await response.json()).toEqual({ error: 'Instructor authorization required.' })
+})
+
+test.each(['modules', 'modules/organized'])(
+  'issue #22: mounted GET %s denies anonymous requests without disclosing hidden drafts',
+  async (path) => {
+    const app = await createApp()
+    const courseId = `issue-22-read-${crypto.randomUUID()}`
+    const draft = createLearningModule({
+      courseId,
+      title: `Hidden draft ${courseId}`,
+      description: `Unpublished description ${courseId}`,
+    })
+    expect(draft).toMatchObject({ published: false, visibility: 'hidden' })
+
+    const url = `http://localhost/03-content/api/courses/${courseId}/${path}`
+    const response = await app.fetch(new Request(url))
+    const body = await response.text()
+    const disclosedDetails = [draft.id, draft.title, draft.description].filter(
+      (detail) => detail && body.includes(detail),
+    )
+
+    expect({ status: response.status, disclosedDetails }).toEqual({
+      status: 403,
+      disclosedDetails: [],
+    })
+    expect(JSON.parse(body)).toEqual({ error: 'Instructor authorization required.' })
+  },
+)
+
+test.each([
+  ['denies access', (): boolean => false],
+  ['throws', (): never => {
+    throw new Error('Private permission lookup error')
+  }],
+  ['rejects', async (): Promise<boolean> => {
+    throw new Error('Private permission lookup error')
+  }],
+] as const)('instructor router fails closed when its authorizer %s', async (_label, authorizeInstructor) => {
+  const courseId = `issue-22-authorizer-${crypto.randomUUID()}`
+  const draft = createLearningModule({ courseId, title: 'Internal instructor fixture' })
+  const app = new Elysia().group('/03-content', (scope) =>
+    scope.use(createInstructorModuleRoutes(authorizeInstructor)),
+  )
+  const url = `http://localhost/03-content/api/courses/${courseId}/modules`
+  const headers = { 'x-user-role': 'instructor', 'x-user-id': 'test-user' }
+  for (const request of [
+    new Request(url, {
+      method: 'POST',
+      headers: { ...headers, 'content-type': 'application/json' },
+      body: JSON.stringify({ title: 'Unauthorized module' }),
+    }),
+    new Request(url, { headers }),
+    new Request(`${url}/organized`, { headers }),
+  ]) {
+    const response = await app.handle(request)
+    expect(response.status).toBe(403)
+    expect(await response.json()).toEqual({ error: 'Instructor authorization required.' })
+  }
+  expect(getLearningModulesByCourse(courseId)).toEqual([draft])
+})
 
 test('mounted Sprint-2 publishing and visibility routes deny unauthorized changes', async () => {
   const app = await createApp()
   const courseId = `mounted-denied-${crypto.randomUUID()}`
   const base = `http://localhost/03-content/api/courses/${courseId}/modules`
-  const created = await app.fetch(new Request(base, {
-    method: 'POST', headers: { 'content-type': 'application/json' },
-    body: JSON.stringify({ title: 'Protected module' }),
-  }))
-  expect(created.status).toBe(201)
-  const { module } = await created.json() as { module: LearningModule }
+  const module = createLearningModule({ courseId, title: 'Protected module' })
   for (const [path, body] of [
     ['publication', { published: true }], ['visibility', { visibility: 'visible' }],
   ] as const) {
@@ -30,8 +115,9 @@ test('mounted Sprint-2 publishing and visibility routes deny unauthorized change
     expect(response.headers.get('content-type')).toContain('application/json')
     expect(await response.json()).toEqual({ error: 'Instructor authorization required.' })
   }
-  const listed = await app.fetch(new Request(base))
-  expect(await listed.json()).toMatchObject({ modules: [{ id: module.id, published: false, visibility: 'hidden' }] })
+  expect(getLearningModulesByCourse(courseId)).toMatchObject([
+    { id: module.id, published: false, visibility: 'hidden' },
+  ])
 
   // No multipart body: authorization must run before upload parsing.
   const uploadDirectory = process.env.C3L_CONTENT_UPLOAD_DIR ?? join(import.meta.dir, '.c3l-content-uploads')
@@ -52,16 +138,12 @@ test('isolated trusted composition permits upload, publication and visibility', 
   const directory = await mkdtemp(join(tmpdir(), 'c3l-composed-'))
   try {
     const courseId = `trusted-${crypto.randomUUID()}`
-    const production = await createApp()
     const base = `http://localhost/03-content/api/courses/${courseId}/modules`
-    const created = await production.fetch(new Request(base, {
-      method: 'POST', headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ title: 'Isolated test module' }),
-    }))
-    const { module } = await created.json() as { module: LearningModule }
+    const module = createLearningModule({ courseId, title: 'Isolated test module' })
     // Only this test composition supplies trust; production remains deny-all.
     const authorizeInstructor = (_request: Request, requested: string) => requested === courseId
     const app = new Elysia().group('/03-content', (scope) => scope
+      .use(createInstructorModuleRoutes())
       .use(createModuleAccessRoutes({ authorizeInstructor }))
       .use(createMaterialUploadRoutes({ authorizeInstructor, uploadDirectory: directory })))
     for (const [path, body] of [
@@ -90,12 +172,26 @@ test('isolated trusted composition permits upload, publication and visibility', 
   }
 })
 
-test('mounted Module 3 homepage links to the management page', async () => {
+test('mounted Module 3 homepage links to the prototype and C3L modules', async () => {
   const app = await createApp()
   const home = await app.fetch(new Request('http://localhost/03-content/'))
   expect(home.status).toBe(200)
   expect(home.headers.get('content-type')).toContain('text/html')
-  expect(await home.text()).toContain('href="/03-content/manage"')
+  const homepage = await home.text()
+  expect(homepage).toContain('<h1>Module 3: Content Management</h1>')
+  expect(homepage).toContain('Instructor Workspace')
+  expect(homepage).toContain('Sprint-2 prototype')
+  expect(homepage).toContain('This workspace opens without sign-in.')
+  expect(homepage).toContain('href="/03-content/manage"')
+  expect(homepage).toContain('href="/03-content/hello"')
+  expect(homepage).toContain('href="/"')
+  expect(homepage).toContain('href="/01-identity-users"')
+  expect(homepage).toContain('href="/02-courses"')
+
+  const studentCard = homepage.match(/<section[^>]+aria-labelledby="student-heading">([\s\S]*?)<\/section>/)?.[1] ?? ''
+  expect(studentCard).toContain('Student Learning')
+  expect(studentCard).toContain('Protected student access is still in development.')
+  expect(studentCard).toContain('href="/03-content/learn"')
 
   const management = await app.fetch(new Request('http://localhost/03-content/manage?courseId=DEMO-101'))
   expect(management.status).toBe(200)
@@ -106,13 +202,13 @@ test('mounted Module 3 homepage links to the management page', async () => {
   expect(html).toContain('id="create-form"')
 })
 
-test('mounted organization API filters shared Sprint-1 data and isolates courses', async () => {
-  const app = await createApp()
+test('authorized organization API filters shared Sprint-1 data and isolates courses', async () => {
   const courseId = `sprint2-${crypto.randomUUID()}`
   const otherCourseId = `sprint2-other-${crypto.randomUUID()}`
+  const app = createAuthorizedInstructorTestApp(courseId, otherCourseId)
   const url = (id: string) => `http://localhost/03-content/api/courses/${encodeURIComponent(id)}/modules`
   const post = async (id: string, title: string, week: number, topic: string) => {
-    const response = await app.fetch(new Request(url(id), {
+    const response = await app.handle(new Request(url(id), {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
       body: JSON.stringify({ title, week, topic }),
@@ -126,33 +222,33 @@ test('mounted organization API filters shared Sprint-1 data and isolates courses
   const differentTopic = await post(courseId, 'Different topic', 2, 'Advanced')
   const other = await post(otherCourseId, 'Other course', 2, 'Basics')
 
-  const listed = await app.fetch(new Request(url(courseId)))
+  const listed = await app.handle(new Request(url(courseId)))
   expect(listed.status).toBe(200)
   expect(await listed.json()).toEqual({ modules: [match, differentWeek, differentTopic] })
 
   const query = new URLSearchParams({ week: '2', topic: ' bAsIcS ' })
-  const organized = await app.fetch(new Request(`${url(courseId)}/organized?${query}`))
+  const organized = await app.handle(new Request(`${url(courseId)}/organized?${query}`))
   expect(organized.status).toBe(200)
   expect(organized.headers.get('content-type')).toContain('application/json')
   expect(await organized.json()).toEqual({ modules: [match] })
 
-  const otherOrganized = await app.fetch(new Request(`${url(otherCourseId)}/organized?${query}`))
+  const otherOrganized = await app.handle(new Request(`${url(otherCourseId)}/organized?${query}`))
   expect(otherOrganized.status).toBe(200)
   expect(await otherOrganized.json()).toEqual({ modules: [other] })
 
-  const invalid = await app.fetch(new Request(`${url(courseId)}/organized?week=2abc`))
+  const invalid = await app.handle(new Request(`${url(courseId)}/organized?week=2abc`))
   expect(invalid.status).toBe(400)
   expect(invalid.headers.get('content-type')).toContain('application/json')
   expect(await invalid.json()).toEqual({ error: 'Week must be a positive safe integer' })
 })
 
-test('mounted Module 3 supports create then list with course isolation', async () => {
-  const app = await createApp()
+test('authorized instructor API supports create then list with course isolation', async () => {
   const courseId = `DEMO-101-${crypto.randomUUID()}`
   const otherCourseId = `DEMO-OTHER-${crypto.randomUUID()}`
+  const app = createAuthorizedInstructorTestApp(courseId, otherCourseId)
   const url = (id: string) => `http://localhost/03-content/api/courses/${id}/modules`
   const post = (id: string, title: string) =>
-    app.fetch(new Request(url(id), {
+    app.handle(new Request(url(id), {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
       body: JSON.stringify({ title }),
@@ -169,12 +265,12 @@ test('mounted Module 3 supports create then list with course isolation', async (
   expect(otherResponse.status).toBe(201)
   const other = (await otherResponse.json()) as { module: LearningModule }
 
-  const listedResponse = await app.fetch(new Request(url(courseId)))
+  const listedResponse = await app.handle(new Request(url(courseId)))
   expect(listedResponse.status).toBe(200)
   expect(listedResponse.headers.get('content-type')).toContain('application/json')
   expect(await listedResponse.json()).toEqual({ modules: [created.module] })
 
-  const otherList = await app.fetch(new Request(url(otherCourseId)))
+  const otherList = await app.handle(new Request(url(otherCourseId)))
   expect(otherList.status).toBe(200)
   expect(await otherList.json()).toEqual({ modules: [other.module] })
 
@@ -182,16 +278,42 @@ test('mounted Module 3 supports create then list with course isolation', async (
   expect(invalidResponse.status).toBe(400)
   expect(invalidResponse.headers.get('content-type')).toContain('application/json')
   expect(await invalidResponse.json()).toEqual({ error: 'Module title is required' })
-  const afterInvalid = await app.fetch(new Request(url(courseId)))
+  const afterInvalid = await app.handle(new Request(url(courseId)))
   expect(await afterInvalid.json()).toEqual({ modules: [created.module] })
+})
 
+test('mounted Module 3 keeps the homepage, demo, and student UI public', async () => {
+  const app = await createApp()
   for (const [path, text] of [
     ['/03-content', 'Module 3: Content Management'],
     ['/03-content/hello', 'Hello from Module 3'],
+    ['/03-content/learn', 'Student Learning'],
   ]) {
     const response = await app.fetch(new Request(`http://localhost${path}`))
     expect(response.status).toBe(200)
     expect(response.headers.get('content-type')).toContain('text/html')
     expect(await response.text()).toContain(text)
   }
+})
+
+test.each([
+  ['anonymous request', new Headers()],
+  ['forged identity and role headers', new Headers({ 'x-user-id': 'claimed-user', 'x-user-role': 'student' })],
+  ['arbitrary cookies', new Headers({ cookie: 'better-auth.session_token=unverified; role=student' })],
+])('mounted student API returns 401 without disclosing modules for %s', async (_label, headers) => {
+  const app = await createApp()
+  const courseId = `student-denial-${crypto.randomUUID()}`
+  const module = createLearningModule({ courseId, title: 'Protected student module' })
+  setModulePublication(courseId, module.id, true)
+  setModuleVisibility(courseId, module.id, 'visible')
+  expect(getLearningModulesByCourse(courseId)).toMatchObject([
+    { id: module.id, published: true, visibility: 'visible' },
+  ])
+
+  const url = `http://localhost/03-content/api/courses/${courseId}/student/modules`
+  const response = await app.fetch(new Request(url, { headers }))
+
+  expect(response.status).toBe(401)
+  expect(response.headers.get('content-type')).toContain('application/json')
+  expect(await response.json()).toEqual({ error: 'Authentication required.' })
 })
