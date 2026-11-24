@@ -1,39 +1,64 @@
-
-flowchart TD
+﻿flowchart TD
     Instructor["Instructor"]
     Student["Student"]
-    InstructorUI["Instructor Management UI - Jaydev"]
-    StudentUI["Student Learning UI - Jaydev"]
 
-    Identity["Module 1 Identity Service - Integration Pending"]
-    Course["Module 2 Course and Enrollment Data - Integration Pending"]
+    InstructorUI["Instructor Management UI"]
+    StudentUI["Student Learning UI"]
 
-    Auth["Content Identity Adapter - Harsh"]
-    Policy["Course Authorization Policy - Harsh"]
-    StudentRoutes["Student HTTP Routes - Harsh"]
-    Filter["Published and Visible Module Filter"]
+    subgraph External["External Module Dependencies"]
+        Identity["Module 1 - Identity Service"]
+        Course["Module 2 - Course and Enrollment Data"]
+    end
 
-    ContentAPI["Module 3 Content APIs"]
-    Persistence["SQLite Persistence Layer - Megha"]
-    Storage["Existing In-Memory Retrieval"]
-    Integration["Route Mounting and Integration - Pending"]
+    subgraph Content["Module 3 - Content Management"]
+        InstructorGuard["Instructor Authorization Guards"]
+        InstructorAPI["Instructor Content APIs"]
+        StudentRoutes["Protected Student HTTP API"]
+        Auth["Identity Adapter Interface"]
+        Policy["Course Authorization Policy"]
+        Filter["Published AND Visible Filter"]
+        Services["Learning Module Services"]
+        Persistence["SQLite Persistence Layer"]
+        Database[("SQLite - Learning Modules")]
+        Upload["Material Upload Service"]
+        Files[("Local File Storage")]
+        Denied["Fail-Closed Access Denial"]
+    end
 
     Instructor --> InstructorUI
-    InstructorUI --> ContentAPI
+    InstructorUI --> InstructorGuard
+    InstructorGuard -->|Authorized| InstructorAPI
+    InstructorGuard -->|Unauthorized| Denied
 
     Student --> StudentUI
-    StudentUI -.-> Integration
-    Integration -.-> StudentRoutes
+    StudentUI --> StudentRoutes
 
     StudentRoutes --> Auth
     Auth -.-> Identity
     StudentRoutes --> Policy
     Policy -.-> Course
 
-    StudentRoutes --> Filter
-    Filter --> Storage
+    Auth -->|Authentication failure| Denied
+    Policy -->|Authorization failure| Denied
+    Policy -->|Authorized| Filter
 
-    ContentAPI --> Persistence
+    InstructorAPI --> Services
+    InstructorAPI --> Upload
+    Upload --> Files
 
-    classDef pending stroke-dasharray: 5 5
-    class Identity,Course,Integration pending
+    Filter -->|Retrieve course modules| Services
+    Services --> Persistence
+    Persistence --> Database
+
+    Limitation["Live trusted Module 1/2 wiring pending - Issue 23"]
+    Limitation -.-> InstructorGuard
+    Limitation -.-> Auth
+    Limitation -.-> Policy
+
+    classDef pending fill:#fff3cd,stroke:#b8860b,stroke-dasharray:5 5
+    classDef storage fill:#e3f2fd,stroke:#1565c0
+    classDef denied fill:#ffebee,stroke:#c62828
+
+    class Identity,Course,Limitation pending
+    class Database,Files storage
+    class Denied denied

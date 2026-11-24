@@ -1,43 +1,60 @@
-sequenceDiagram
+﻿sequenceDiagram
     autonumber
     actor Student
-    participant Route as Student Content Route
+    participant UI as Student Learning UI
+    participant Route as Student Content API
     participant Auth as Identity Adapter
-    participant Identity as Module 1 Identity
     participant Policy as Course Authorization Policy
-    participant Course as Course Permission Adapter
-    participant Modules as Module Retrieval
+    participant Course as Course Permission Dependencies
+    participant Service as Module Retrieval Service
+    participant DB as SQLite Database
 
-    Note over Route,Course: External integrations pending verification
+    Note over Route,Course: Live Module 1/2 wiring pending - Issue 23
+    Note over Auth,Course: Trusted test adapters support authorized test flows
 
-    Student->>Route: GET student modules
-    Route->>Auth: Authenticate request
-    Auth->>Identity: Validate session
-    Identity-->>Auth: Identity result
+    Student->>UI: Request course learning modules
+    UI->>Route: GET /api/courses/:courseId/student/modules
+    Route->>Auth: Resolve authenticated user
+    Auth-->>Route: Identity result
 
-    alt Invalid or missing session
-        Auth-->>Route: Authentication denied
-        Route-->>Student: 401 Unauthorized
-    else Valid active student
-        Auth-->>Route: Authenticated student
-        Route->>Policy: Authorize course access
+    alt Missing or invalid authentication
+        Route-->>UI: 401 Unauthorized
+    else Authenticated user
+        Route->>Policy: Authorize student course access
         Policy->>Course: Check course and enrollment
-        Course-->>Policy: Permission result
+        Course-->>Policy: Course and permission result
+        Policy-->>Route: Authorization decision
 
-        alt Course not found
-            Policy-->>Route: Course not found
-            Route-->>Student: 404 Not Found
-        else Student not enrolled
-            Policy-->>Route: Access denied
-            Route-->>Student: 403 Forbidden
+        alt Access denied
+            Route-->>UI: 403 Forbidden
+        else Course not found
+            Route-->>UI: 404 Not Found
         else Permission lookup fails
-            Policy-->>Route: Service unavailable
-            Route-->>Student: 503 Service Unavailable
-        else Student authorized
-            Policy-->>Route: Access granted
-            Route->>Modules: Get accessible modules
-            Note over Modules: Existing retrieval path, SQLite integration pending
-            Modules-->>Route: Published and visible modules
-            Route-->>Student: 200 OK with modules array
+            Route-->>UI: 503 Service Unavailable
+        else Access granted
+            Route->>Policy: Recheck course authorization
+            Policy->>Course: Revalidate course and enrollment
+            Course-->>Policy: Updated permission result
+            Policy-->>Route: Final authorization decision
+
+            alt Enrollment revoked or access denied
+                Route-->>UI: 403 Forbidden
+            else Course no longer exists
+                Route-->>UI: 404 Not Found
+            else Permission service unavailable
+                Route-->>UI: 503 Service Unavailable
+            else Authorization confirmed
+                Route->>Service: Retrieve requested course modules
+                Service->>DB: Query modules by course ID
+                DB-->>Service: Course-specific module records
+                Service->>Service: Filter published AND visible modules
+                Service-->>Route: Accessible modules only
+                Route-->>UI: 200 OK with modules array
+            end
         end
     end
+
+    UI-->>Student: Display accessible content or access error
+
+    Note over Route,DB: Verified using SQLite-backed records at e59b16f
+    Note over Auth,Policy: Mounted production defaults fail closed until trusted integration
