@@ -197,6 +197,7 @@ test('loopback HTTP demo supports the instructor-to-student workflow in isolated
         )
         expect(html).toContain('value="DEMO-101"')
         expect(html).not.toContain('OTHER-101')
+        if (path === '/manage') expect(html).toContain('aria-label="Add Learning Unit"')
         expect((await requestPage(`${base}${path}?courseId=OTHER-101`)).status).toBe(403)
       }
 
@@ -236,6 +237,10 @@ test('loopback HTTP demo supports the instructor-to-student workflow in isolated
       expect(module).toMatchObject({ courseId, published: false, visibility: 'hidden' })
       const modulePath = `${modules}/${module.id}`
       const studentModulePath = `${studentModules}/${module.id}`
+      expect(await (await request(`${modulePath}/units`)).json()).toEqual({ units: [] })
+      expect(await (await request(`${modulePath}/materials`)).json()).toEqual({ materials: [] })
+      expect((await anonymous(`${modulePath}/units`, json('POST', { title: 'Unauthorized' }))).status).toBe(403)
+      expect((await anonymous(`${modulePath}/materials`)).status).toBe(403)
       const forgeries = { ...forged, 'content-type': 'application/json' }
       for (const [path, init] of [
         [modules, json('POST', { title: 'Unauthorized draft' })],
@@ -298,6 +303,11 @@ test('loopback HTTP demo supports the instructor-to-student workflow in isolated
         material: { courseId, moduleId: module.id, filename: 'field-notes.pdf' },
       })
       expect(await readdir(join(directory, 'demo-uploads'))).toHaveLength(1)
+      const listedMaterials = await request(`${modulePath}/materials`)
+      expect(listedMaterials.status).toBe(200)
+      expect(await listedMaterials.json()).toMatchObject({
+        materials: [{ filename: 'field-notes.pdf', mimeType: 'application/pdf', size: 9 }],
+      })
 
       const change = async (operation: string, body: object) => {
         const response = await request(`${modules}/${module.id}/${operation}`, json('PATCH', body))

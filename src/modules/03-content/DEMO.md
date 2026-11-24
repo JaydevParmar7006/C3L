@@ -23,7 +23,9 @@ The accounts, authentication, assignment, and enrollment are simulated and apply
 
 After signing in, select the assigned or enrolled course from the dashboard. Use **Sign out** to switch accounts. Sessions last up to four hours and end when the demo server restarts.
 
-Modules, their publication and visibility settings, units, and material metadata persist in `.c3l-content-data/demo.sqlite`. Uploaded files persist in `.c3l-content-data/demo-uploads/`. The student APIs return units and public material metadata for published, visible modules. Unit management and resource browsing are currently API-only, and the demo has no student download endpoint.
+In the Instructor Workspace, each module has an **Add Learning Unit** form and lists its units and uploaded materials. The material list refreshes after an upload and shows the original filename, media type, and size. Uploads belong to the module.
+
+Modules, their publication and visibility settings, units, and material metadata persist in `.c3l-content-data/demo.sqlite`. Uploaded files persist in `.c3l-content-data/demo-uploads/`. Student unit and material browsing remains API-only for published, visible modules. The demo has no student download endpoint.
 
 ## Reset demo data
 

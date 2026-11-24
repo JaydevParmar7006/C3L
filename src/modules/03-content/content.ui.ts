@@ -2,7 +2,7 @@ import { Elysia } from 'elysia'
 import { escapeHtml } from '../../core/pages'
 import { MAX_MATERIAL_SIZE } from './material.validation'
 
-function managementPage(courseId: string): string {
+function managementPage(courseId: string, showResources: boolean): string {
   return `<!doctype html>
 <html lang="en">
 <head>
@@ -27,12 +27,17 @@ function managementPage(courseId: string): string {
     :focus-visible { outline: 3px solid #e5a328; outline-offset: 3px; }
     .filters { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
     .filters .actions { grid-column: 1 / -1; } #modules { list-style: none; padding: 0; }
-    #modules li { border-top: 1px solid #d8e1ee; padding: 16px 0; overflow-wrap: anywhere; }
+    #modules > li { border-top: 1px solid #d8e1ee; padding: 16px 0; overflow-wrap: anywhere; }
     #modules h3 { margin: 0 0 8px; } #modules p { margin: 6px 0; white-space: pre-wrap; }
     .module-controls { min-inline-size: 0; margin: 12px 0 0; padding: 0; border: 0; }
     .module-controls legend { font-weight: 600; margin-bottom: 8px; }
     .upload-form { margin-top: 16px; }
     .upload-form input { min-width: 0; }
+    .module-resources { border-top: 1px solid #d8e1ee; margin-top: 16px; padding-top: 12px; }
+    .module-resources h4 { margin: 0; }
+    .resource-list { padding-inline-start: 1.25rem; overflow-wrap: anywhere; }
+    .resource-list li + li { margin-top: .5rem; }
+    .module-resources .feedback:empty { display: none; }
     .feedback { min-height: 1.6em; overflow-wrap: anywhere; } .feedback[data-kind="error"] { color: #a51b26; }
     .feedback[data-kind="success"] { color: #17643b; }
     @media (max-width: 720px) { .layout, .filters { grid-template-columns: 1fr; } main { padding: 24px 14px; } .panel { padding: 18px; } }
@@ -80,6 +85,22 @@ function managementPage(courseId: string): string {
             <button class="publication secondary" type="button">Publish</button>
             <button class="visibility secondary" type="button">Make visible</button>
           </div>
+          ${showResources ? `
+          <section class="module-resources">
+            <h4>Learning units</h4>
+            <ul class="resource-list units-list" aria-label="Learning units"></ul>
+            <p class="feedback units-status" role="status"></p>
+            <form class="unit-form" aria-label="Add Learning Unit">
+              <label>Unit title (required)<input name="title" required></label>
+              <label>Unit description (optional)<textarea name="description" rows="2"></textarea></label>
+              <button type="submit">Add Learning Unit</button>
+            </form>
+            <p class="feedback unit-feedback" role="status"></p>
+          </section>
+          <section class="module-resources">
+            <h4>Learning materials</h4>
+            <ul class="resource-list materials-list" aria-label="Learning materials"></ul>
+            <p class="feedback materials-status" role="status"></p>` : ''}
           <form class="upload-form" enctype="multipart/form-data">
             <label>Learning material
               <input name="file" type="file" required accept="application/pdf,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document,video/mp4,video/webm">
@@ -87,6 +108,7 @@ function managementPage(courseId: string): string {
             <p class="hint">PDF, DOC, DOCX, MP4 or WebM. Maximum 20 MiB.</p>
             <button type="submit">Upload material</button>
           </form>
+          ${showResources ? '</section>' : ''}
         </fieldset>
         <p class="feedback module-feedback" role="status" aria-live="polite"></p>
       </template>
@@ -146,6 +168,39 @@ function managementPage(courseId: string): string {
   function errorText(error) {
     return error instanceof Error ? error.message : 'Request failed. Please try again.';
   }
+  function resourceLoader(item, url, resource, emptyMessage, render) {
+    const list = item.querySelector('.' + resource + '-list');
+    const status = item.querySelector('.' + resource + '-status');
+    let latest = 0;
+    return async () => {
+      const request = ++latest;
+      status.dataset.kind = '';
+      status.textContent = 'Loading ' + resource + '…';
+      try {
+        const data = await requestJson(url + '/' + resource);
+        if (!item.isConnected || request !== latest) return;
+        if (!Array.isArray(data[resource])) throw new Error('The server returned an invalid resource list.');
+        list.replaceChildren(...data[resource].map(render));
+        status.textContent = data[resource].length ? '' : emptyMessage;
+      } catch (error) {
+        if (!item.isConnected || request !== latest) return;
+        status.dataset.kind = 'error';
+        status.textContent = 'Could not load ' + resource + '. ' + errorText(error);
+      }
+    };
+  }
+  function resourceRow(title, detail) {
+    const row = document.createElement('li');
+    const label = document.createElement('strong');
+    label.textContent = title;
+    row.append(label);
+    if (detail) {
+      const description = document.createElement('p');
+      description.textContent = detail;
+      row.append(description);
+    }
+    return row;
+  }
   function addModuleActions(item, id, module) {
     item.append(byId('module-actions').content.cloneNode(true));
     const state = item.querySelector('.module-state');
@@ -163,18 +218,18 @@ function managementPage(courseId: string): string {
       publication.textContent = module.published ? 'Unpublish' : 'Publish';
       visibility.textContent = module.visibility === 'visible' ? 'Hide' : 'Make visible';
     }
-    async function runAction(trigger, pending, action) {
+    async function runAction(trigger, pending, action, feedback = status) {
       if (controls.disabled) return;
       const restoreFocus = item.contains(document.activeElement);
       controls.disabled = true;
-      status.dataset.kind = '';
-      status.textContent = pending;
+      feedback.dataset.kind = '';
+      feedback.textContent = pending;
       try {
-        status.textContent = await action();
-        status.dataset.kind = 'success';
+        feedback.textContent = await action();
+        feedback.dataset.kind = 'success';
       } catch (error) {
-        status.textContent = errorText(error);
-        status.dataset.kind = 'error';
+        feedback.textContent = errorText(error);
+        feedback.dataset.kind = 'error';
       } finally {
         controls.disabled = false;
         if (restoreFocus && item.isConnected && document.activeElement === document.body) trigger.focus();
@@ -203,6 +258,44 @@ function managementPage(courseId: string): string {
       changeState(visibility, 'visibility', 'visibility', module.visibility === 'visible' ? 'hidden' : 'visible',
         (value) => value === 'visible' || value === 'hidden', 'Visibility updated.');
     });
+    let loadMaterials;
+    if (${showResources}) {
+      const unitForm = item.querySelector('.unit-form');
+      const unitTitle = unitForm.elements.namedItem('title');
+      const unitDescription = unitForm.elements.namedItem('description');
+      const unitFeedback = item.querySelector('.unit-feedback');
+      const loadUnits = resourceLoader(item, url, 'units', 'No learning units yet.',
+        (unit) => resourceRow(unit.title, unit.description));
+      loadMaterials = resourceLoader(item, url, 'materials', 'No learning materials uploaded yet.',
+        (material) => resourceRow(material.filename, [
+          material.mimeType,
+          Number.isFinite(material.size) ? material.size.toLocaleString() + ' bytes' : '',
+        ].filter(Boolean).join(' · ')));
+      unitForm.addEventListener('submit', (event) => {
+        event.preventDefault();
+        void runAction(event.submitter ?? unitTitle, 'Adding learning unit…', async () => {
+          const title = unitTitle.value.trim();
+          if (!title) throw new Error('Enter a learning unit title.');
+          const description = unitDescription.value.trim();
+          const body = description ? { title, description } : { title };
+          const data = await requestJson(url + '/units', {
+            method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body),
+          });
+          if (data.unit?.moduleId !== module.id || typeof data.unit.title !== 'string') {
+            throw new Error('The server did not confirm the learning unit.');
+          }
+          unitForm.reset();
+          await loadUnits();
+          return 'Learning unit added.';
+        }, unitFeedback);
+      });
+      // Start after the card is attached so late responses for removed cards can be ignored.
+      queueMicrotask(() => {
+        if (!item.isConnected) return;
+        void loadUnits();
+        void loadMaterials();
+      });
+    }
     form.addEventListener('submit', (event) => {
       event.preventDefault();
       const file = fileInput.files[0];
@@ -219,6 +312,7 @@ function managementPage(courseId: string): string {
           throw new Error('The server did not confirm the upload.');
         }
         form.reset();
+        await loadMaterials?.();
         return 'Uploaded: ' + data.material.filename;
       });
     });
@@ -329,8 +423,12 @@ function managementPage(courseId: string): string {
 </body></html>`
 }
 
-export const contentUiRoutes = new Elysia().get('/manage', ({ request, set }) => {
-  const courseId = new URL(request.url).searchParams.get('courseId') ?? ''
-  set.headers['content-type'] = 'text/html; charset=utf-8'
-  return managementPage(courseId)
-})
+export function createContentUiRoutes({ showResources = false } = {}) {
+  return new Elysia().get('/manage', ({ request, set }) => {
+    const courseId = new URL(request.url).searchParams.get('courseId') ?? ''
+    set.headers['content-type'] = 'text/html; charset=utf-8'
+    return managementPage(courseId, showResources)
+  })
+}
+
+export const contentUiRoutes = createContentUiRoutes()

@@ -1,7 +1,7 @@
 import { describe, expect, test } from 'bun:test'
 import { runInNewContext } from 'node:vm'
 import { escapeHtml } from '../../core/pages'
-import { contentUiRoutes } from './content.ui'
+import { contentUiRoutes, createContentUiRoutes } from './content.ui'
 
 const page = (courseId?: string) => {
   const query = new URLSearchParams()
@@ -111,6 +111,7 @@ describe('Content management page HTML', () => {
     expect(html).toContain('<label>Learning material')
     expect(html).toContain('name="file" type="file" required')
     expect(html).toContain('PDF, DOC, DOCX, MP4 or WebM. Maximum 20 MiB.')
+    expect(html).not.toContain('aria-label="Add Learning Unit"')
   })
 })
 
@@ -126,7 +127,7 @@ class TestElement {
   selectors = new Map<string, TestElement>()
   listeners = new Map<string, (event: { preventDefault(): void }) => void>()
   append(...children: TestElement[]) { this.children.push(...children) }
-  replaceChildren() { this.children = [] }
+  replaceChildren(...children: TestElement[]) { this.children = children }
   contains() { return false }
   querySelector(selector: string) {
     const element = this.selectors.get(selector) ?? new TestElement()
@@ -225,4 +226,127 @@ test('management script sends protected requests and displays only confirmed cha
     expect(status.textContent).toContain(`HTTP ${code}`)
     expect(state.textContent).toBe('Published · Visible')
   }
+})
+
+test('demo workspace creates units, reloads resources, and renders API text safely', async () => {
+  const response = await createContentUiRoutes({ showResources: true }).handle(
+    new Request('http://localhost/manage'),
+  )
+  const html = await response.text()
+  expect(html).toContain('aria-label="Add Learning Unit"')
+  expect(html).toContain('<input name="title" required>')
+  expect(html).not.toMatch(/innerHTML|insertAdjacentHTML/)
+  const root = new TestElement()
+  const get = (id: string) => root.querySelector(id)
+  Object.assign(get('module-actions'), { content: { cloneNode: () => new TestElement() } })
+  const file = new File(['%PDF-test'], 'field-notes.pdf', { type: 'application/pdf' })
+  const unsafe = '<img src=x onerror=alert(1)>'
+  const material = { filename: unsafe + '.pdf', size: 12, mimeType: file.type, storedFilename: 'internal-name' }
+  const module = { id: 'module-1', title: 'Fieldwork', published: false, visibility: 'hidden' }
+  const unit = { moduleId: module.id, title: unsafe, description: '<script>example</script>' }
+  const requests: { path: string; options: RequestInit }[] = []
+  const responses: (Response | Error)[] = []
+  const cards: TestElement[] = []
+  let nextIsCard = true
+
+  function createCard() {
+    const card = new TestElement()
+    const title = new TestElement()
+    const description = new TestElement()
+    const unitForm = Object.assign(new TestElement(), {
+      elements: { namedItem: (name: string) => name === 'title' ? title : description },
+      reset: () => { title.value = ''; description.value = '' },
+    })
+    const fileInput = { files: [file], accept: 'application/pdf' }
+    const upload = Object.assign(new TestElement(), {
+      elements: { namedItem: () => fileInput },
+      reset: () => { fileInput.files = [] },
+    })
+    card.selectors.set('.unit-form', unitForm)
+    card.selectors.set('.upload-form', upload)
+    return Object.assign(card, { title, description, unitForm, upload })
+  }
+
+  runInNewContext(html.split('<script>')[1]?.split('</script>')[0] ?? '', {
+    document: {
+      getElementById: get,
+      createElement: (tag: string) => {
+        if (tag !== 'li' || !nextIsCard) return new TestElement()
+        nextIsCard = false
+        const card = createCard()
+        cards.push(card)
+        return card
+      },
+    },
+    URLSearchParams, FormData, Error, queueMicrotask,
+    fetch: async (path: string, options: RequestInit) => {
+      requests.push({ path, options })
+      const next = responses.shift()
+      if (next instanceof Error) throw next
+      return next
+    },
+  })
+  const settle = () => Bun.sleep(0)
+  get('course-id').value = 'DEMO-101'
+  responses.push(Response.json({ modules: [module] }), Response.json({ units: [] }), Response.json({ materials: [] }))
+  get('course-form').fire('submit')
+  await settle()
+  const card = cards[0] as ReturnType<typeof createCard>
+  const base = '/03-content/api/courses/DEMO-101/modules/module-1'
+  expect(requests.slice(1).map(({ path }) => path)).toEqual([`${base}/units`, `${base}/materials`])
+  expect(card.querySelector('.units-status').textContent).toBe('No learning units yet.')
+  expect(card.querySelector('.materials-status').textContent).toBe('No learning materials uploaded yet.')
+
+  card.title.value = '   '
+  card.unitForm.fire('submit')
+  await settle()
+  const feedback = card.querySelector('.unit-feedback')
+  expect(feedback.textContent).toBe('Enter a learning unit title.')
+  expect(requests).toHaveLength(3)
+
+  card.title.value = unsafe
+  card.description.value = unit.description
+  for (const [failure, message] of [
+    [Response.json({ error: 'Learning unit title is required' }, { status: 400 }), 'Learning unit title is required'],
+    [Response.json({ error: 'Instructor authorization required.' }, { status: 403 }), 'Instructor authorization required.'],
+    [new Error('offline'), 'Could not reach the server'],
+  ] as const) {
+    responses.push(failure)
+    card.unitForm.fire('submit')
+    await settle()
+    expect(feedback.dataset.kind).toBe('error')
+    expect(feedback.textContent).toContain(message)
+    expect(card.title.value).toBe(unsafe)
+  }
+
+  responses.push(Response.json({ unit }, { status: 201 }), Response.json({ units: [unit] }))
+  card.unitForm.fire('submit')
+  await settle()
+  expect(requests.at(-2)).toEqual({ path: `${base}/units`, options: {
+    credentials: 'same-origin', method: 'POST', headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ title: unsafe, description: unit.description }),
+  } })
+  expect(requests.at(-1)?.path).toBe(`${base}/units`)
+  expect(feedback.textContent).toBe('Learning unit added.')
+  expect(card.title.value).toBe('')
+  expect(card.querySelector('.units-list').children[0]?.children.map(({ textContent }) => textContent))
+    .toEqual([unsafe, unit.description])
+
+  responses.push(
+    Response.json({ material: { ...material, moduleId: module.id } }, { status: 201 }),
+    Response.json({ materials: [material] }),
+  )
+  card.upload.fire('submit')
+  await settle()
+  expect(requests.at(-2)?.options.method).toBe('POST')
+  expect(requests.at(-1)).toEqual({ path: `${base}/materials`, options: { credentials: 'same-origin' } })
+  expect(card.querySelector('.materials-list').children[0]?.children.map(({ textContent }) => textContent))
+    .toEqual([material.filename, 'application/pdf · 12 bytes'])
+
+  nextIsCard = true
+  responses.push(Response.json({ modules: [module] }), Response.json({ units: [unit] }), Response.json({ materials: [material] }))
+  get('course-form').fire('submit')
+  await settle()
+  expect(cards[1]?.querySelector('.units-list').children[0]?.children[0]?.textContent).toBe(unsafe)
+  expect(cards[1]?.querySelector('.materials-list').children[0]?.children[0]?.textContent).toBe(material.filename)
 })
