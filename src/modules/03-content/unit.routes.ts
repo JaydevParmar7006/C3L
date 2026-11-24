@@ -8,7 +8,10 @@
  */
 
 import { Elysia } from 'elysia'
+import type { Database } from 'bun:sqlite'
 import type { ModuleAccessAuthorizer } from './module.access.routes'
+import { contentDatabase } from './module.service'
+
 import {
   createLearningUnit,
   getLearningUnitsByModule,
@@ -16,6 +19,9 @@ import {
 
 export interface UnitRouteOptions {
   authorizeInstructor?: ModuleAccessAuthorizer
+
+  /** Trusted server-side database dependency. */
+  database?: Database
 }
 
 /**
@@ -23,10 +29,15 @@ export interface UnitRouteOptions {
  *
  * Access is denied by default unless trusted
  * instructor authorization is supplied.
+ *
+ * Supports separate SQLite databases for normal
+ * application, demonstration and testing environments.
  */
 export function createUnitRoutes(
   options: UnitRouteOptions = {},
 ) {
+  const database = options.database ?? contentDatabase
+
   async function isAuthorized(
     request: Request,
     courseId: string,
@@ -103,12 +114,16 @@ export function createUnitRoutes(
         }
 
         try {
-          const unit = createLearningUnit({
-            courseId,
-            moduleId,
-            title: body.title,
-            ...(description !== undefined && { description }),
-          })
+          // Create the learning unit in the selected database.
+          const unit = createLearningUnit(
+            {
+              courseId,
+              moduleId,
+              title: body.title,
+              ...(description !== undefined && { description }),
+            },
+            database,
+          )
 
           return Response.json({ unit }, { status: 201 })
         } catch (error) {
@@ -151,9 +166,11 @@ export function createUnitRoutes(
         }
 
         try {
+          // Retrieve learning units from the selected database.
           const units = getLearningUnitsByModule(
             courseId,
             moduleId,
+            database,
           )
 
           return Response.json({ units }, { status: 200 })

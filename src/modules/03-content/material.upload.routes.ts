@@ -1,7 +1,9 @@
 
 import { Elysia } from 'elysia'
 import { unlink } from 'node:fs/promises'
-import { getLearningModulesByCourse } from './module.service'
+import type { Database } from 'bun:sqlite'
+import { contentDatabase } from './module.service'
+import { getModulesFromDatabase } from './content.database'
 import { saveLearningMaterial } from './material.storage'
 import { validateLearningMaterial } from './material.validation'
 import { saveLearningMaterialMetadata } from './material.service'
@@ -13,6 +15,9 @@ export interface MaterialUploadRouteOptions {
 
   /** Trusted server configuration, never taken from request data. */
   uploadDirectory?: string
+
+  /** Optional database for demonstration and testing environments. */
+  database?: Database
 }
 
 /**
@@ -22,6 +27,8 @@ export interface MaterialUploadRouteOptions {
 export function createMaterialUploadRoutes(
   options: MaterialUploadRouteOptions = {},
 ) {
+  const database = options.database ?? contentDatabase
+
   return new Elysia().post(
     '/api/courses/:courseId/modules/:moduleId/materials',
     async ({ params, request, set }) => {
@@ -42,10 +49,11 @@ export function createMaterialUploadRoutes(
         return { error: 'Instructor authorization required.' }
       }
 
-      // Verify that the module belongs to the requested course.
-      const module = getLearningModulesByCourse(courseId).find(
-        (item) => item.id === moduleId,
-      )
+      // Verify ownership using the selected database.
+      const module = getModulesFromDatabase(
+        database,
+        courseId,
+      ).find((item) => item.id === moduleId)
 
       if (!module) {
         set.status = 404
@@ -70,7 +78,6 @@ export function createMaterialUploadRoutes(
         return { error: 'Invalid upload form data' }
       }
 
-      // Retrieve the uploaded file.
       const file = form.get('file')
 
       if (!(file instanceof File)) {
@@ -78,7 +85,7 @@ export function createMaterialUploadRoutes(
         return { error: 'A file is required' }
       }
 
-      // Validate file size and supported file type.
+      // Validate the uploaded file.
       const validationError = validateLearningMaterial(file)
 
       if (validationError) {
@@ -86,11 +93,10 @@ export function createMaterialUploadRoutes(
         return { error: validationError }
       }
 
-      // Track the saved file for cleanup if persistence fails.
+      // Track the saved file for cleanup.
       let savedFilePath: string | undefined
 
       try {
-        // Save the actual file contents to disk.
         const savedFile = await saveLearningMaterial(
           file,
           options.uploadDirectory,
@@ -98,7 +104,6 @@ export function createMaterialUploadRoutes(
 
         savedFilePath = savedFile.filePath
 
-        // Create metadata for the uploaded learning material.
         const material: LearningMaterial = {
           id: crypto.randomUUID(),
           courseId,
@@ -110,10 +115,12 @@ export function createMaterialUploadRoutes(
           uploadedAt: new Date().toISOString(),
         }
 
-        // Persist material metadata in SQLite.
-        const persistedMaterial = saveLearningMaterialMetadata(material)
+        // Persist metadata in the selected database.
+        const persistedMaterial = saveLearningMaterialMetadata(
+          material,
+          database,
+        )
 
-        // Return success only after file and metadata are saved.
         set.status = 201
         return { material: persistedMaterial }
       } catch {
@@ -122,7 +129,6 @@ export function createMaterialUploadRoutes(
           try {
             await unlink(savedFilePath)
           } catch (cleanupError) {
-            // Record cleanup failures without exposing paths to clients.
             console.error(
               'Unable to clean up failed material upload',
               cleanupError,
@@ -130,7 +136,6 @@ export function createMaterialUploadRoutes(
           }
         }
 
-        // Preserve the existing upload error response.
         set.status = 500
         return { error: 'Unable to save uploaded file' }
       }

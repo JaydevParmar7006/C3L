@@ -4,17 +4,19 @@
  * Sprint 3: Learning Material Service
  *
  * Handles persistent learning-material metadata.
+ * Supports an injectable SQLite database for
+ * production, demonstration and testing environments.
  */
+
+import type { Database } from 'bun:sqlite'
 
 import {
   getMaterialsFromDatabase,
+  getModulesFromDatabase,
   saveMaterialToDatabase,
 } from './content.database'
 
-import {
-  contentDatabase,
-  getLearningModulesByCourse,
-} from './module.service'
+import { contentDatabase } from './module.service'
 
 import type { LearningMaterial } from './material.model'
 
@@ -26,8 +28,10 @@ import type { LearningMaterial } from './material.model'
  */
 export function saveLearningMaterialMetadata(
   material: LearningMaterial,
+  database: Database = contentDatabase,
 ): LearningMaterial {
-  const parentModule = getLearningModulesByCourse(
+  const parentModule = getModulesFromDatabase(
+    database,
     material.courseId,
   ).find((module) => module.id === material.moduleId)
 
@@ -35,7 +39,7 @@ export function saveLearningMaterialMetadata(
     throw new Error('Learning module not found')
   }
 
-  saveMaterialToDatabase(contentDatabase, material)
+  saveMaterialToDatabase(database, material)
 
   return { ...material }
 }
@@ -50,6 +54,7 @@ export function saveLearningMaterialMetadata(
 export function getLearningMaterialsByModule(
   courseId: string,
   moduleId: string,
+  database: Database = contentDatabase,
 ): LearningMaterial[] {
   if (typeof courseId !== 'string' || !courseId.trim()) {
     throw new Error('Course ID is required')
@@ -62,7 +67,8 @@ export function getLearningMaterialsByModule(
   const normalizedCourseId = courseId.trim()
   const normalizedModuleId = moduleId.trim()
 
-  const parentModule = getLearningModulesByCourse(
+  const parentModule = getModulesFromDatabase(
+    database,
     normalizedCourseId,
   ).find((module) => module.id === normalizedModuleId)
 
@@ -71,7 +77,7 @@ export function getLearningMaterialsByModule(
   }
 
   return getMaterialsFromDatabase(
-    contentDatabase,
+    database,
     normalizedCourseId,
     normalizedModuleId,
   )

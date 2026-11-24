@@ -3,19 +3,20 @@
  * Module 3: Content Management
  * Sprint 3: Learning Unit Service
  *
- * Creates and retrieves learning units using
- * the shared SQLite database connection.
+ * Creates and retrieves persistent learning units.
+ * Supports injectable SQLite database connections for
+ * production, demonstration and testing environments.
  */
+
+import type { Database } from 'bun:sqlite'
 
 import {
   saveUnitToDatabase,
   getUnitsFromDatabase,
+  getModulesFromDatabase,
 } from './content.database'
 
-import {
-  contentDatabase,
-  getLearningModulesByCourse,
-} from './module.service'
+import { contentDatabase } from './module.service'
 
 import type {
   CreateLearningUnitInput,
@@ -32,6 +33,7 @@ import { validateLearningUnitInput } from './unit.validation'
  */
 export function createLearningUnit(
   input: CreateLearningUnitInput,
+  database: Database = contentDatabase,
 ): LearningUnit {
   const validationError = validateLearningUnitInput(input)
 
@@ -42,9 +44,11 @@ export function createLearningUnit(
   const courseId = input.courseId.trim()
   const moduleId = input.moduleId.trim()
 
-  // Verify that the parent module belongs to this course.
-  const parentModule = getLearningModulesByCourse(courseId)
-    .find((module) => module.id === moduleId)
+  // Verify ownership using the selected database.
+  const parentModule = getModulesFromDatabase(
+    database,
+    courseId,
+  ).find((module) => module.id === moduleId)
 
   if (!parentModule) {
     throw new Error('Learning module not found')
@@ -68,8 +72,8 @@ export function createLearningUnit(
     }),
   }
 
-  // Persist the unit using the shared SQLite connection.
-  saveUnitToDatabase(contentDatabase, newUnit)
+  // Persist the unit using the selected SQLite connection.
+  saveUnitToDatabase(database, newUnit)
 
   return newUnit
 }
@@ -77,10 +81,14 @@ export function createLearningUnit(
 /**
  * Retrieves learning units belonging to a specific
  * course and parent module.
+ *
+ * API callers must perform authorization before
+ * calling this internal service.
  */
 export function getLearningUnitsByModule(
   courseId: string,
   moduleId: string,
+  database: Database = contentDatabase,
 ): LearningUnit[] {
   if (typeof courseId !== 'string' || !courseId.trim()) {
     throw new Error('Course ID is required')
@@ -93,16 +101,18 @@ export function getLearningUnitsByModule(
   const normalizedCourseId = courseId.trim()
   const normalizedModuleId = moduleId.trim()
 
-  // Verify the parent module exists in the requested course.
-  const parentModule = getLearningModulesByCourse(normalizedCourseId)
-    .find((module) => module.id === normalizedModuleId)
+  // Verify the parent module exists in the selected database.
+  const parentModule = getModulesFromDatabase(
+    database,
+    normalizedCourseId,
+  ).find((module) => module.id === normalizedModuleId)
 
   if (!parentModule) {
     throw new Error('Learning module not found')
   }
 
   return getUnitsFromDatabase(
-    contentDatabase,
+    database,
     normalizedCourseId,
     normalizedModuleId,
   )
