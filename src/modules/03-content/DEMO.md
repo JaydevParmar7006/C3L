@@ -8,10 +8,22 @@ $env:NODE_ENV = 'development'
 bun run --no-env-file .\src\modules\03-content\demo.server.ts
 ```
 
-- [Instructor Workspace](http://127.0.0.1:3103/03-content/manage)
-- [Student Learning](http://127.0.0.1:3103/03-content/learn)
+- [Demo sign-in](http://127.0.0.1:3103/03-content/login)
+- [Course dashboard](http://127.0.0.1:3103/03-content)
+- [Instructor Workspace](http://127.0.0.1:3103/03-content/manage?courseId=DEMO-101)
+- [Student Learning](http://127.0.0.1:3103/03-content/learn?courseId=DEMO-101)
 
-The demo simulates authentication, instructor permissions, and enrollment for `DEMO-101`. Any local client that can connect can use the simulated views. Demo modules, their publication and visibility settings, learning units, and material metadata persist in `.c3l-content-data/demo.sqlite`. Uploaded files persist in `.c3l-content-data/demo-uploads/`. The demo exposes instructor APIs for units and material metadata. The existing pages provide no unit editor or student download endpoint.
+The accounts, authentication, assignment, and enrollment are simulated and apply only to the localhost presentation server.
+
+| Username | Password | Course access |
+| --- | --- | --- |
+| `instructor` | `C3L-Demo-101` | Manage `DEMO-101` |
+| `student` | `C3L-Demo-101` | Study `DEMO-101` |
+| `unenrolled` | `C3L-Demo-101` | Empty dashboard and denied course APIs |
+
+After signing in, select the assigned or enrolled course from the dashboard. Use **Sign out** to switch accounts. Sessions last up to four hours and end when the demo server restarts.
+
+Modules, their publication and visibility settings, units, and material metadata persist in `.c3l-content-data/demo.sqlite`. Uploaded files persist in `.c3l-content-data/demo-uploads/`. The student APIs return units and public material metadata for published, visible modules. Unit management and resource browsing are currently API-only, and the demo has no student download endpoint.
 
 ## Reset demo data
 

@@ -20,6 +20,34 @@ const forged = {
   'x-course-permissions': 'all',
 }
 
+function client(url: URL, cookie?: string) {
+  return (path: string, init?: RequestInit) => {
+    const headers = new Headers(init?.headers)
+    if (cookie) headers.set('cookie', cookie)
+    return fetch(new URL(path, url), { redirect: 'manual', ...init, headers })
+  }
+}
+
+function login(url: URL, username: string, password = 'C3L-Demo-101', origin = url.origin) {
+  return client(url)(`${base}/login`, {
+    method: 'POST',
+    headers: { origin },
+    body: new URLSearchParams({ username, password }),
+  })
+}
+
+async function signIn(url: URL, username: string) {
+  const response = await login(url, username)
+  expect(response.status).toBe(303)
+  expect(response.headers.get('location')).toBe(base)
+  const cookie = response.headers.get('set-cookie') ?? ''
+  expect(cookie).toContain('HttpOnly')
+  expect(cookie).toContain('SameSite=Strict')
+  expect(cookie).toContain('Path=/03-content')
+  expect(cookie).toMatch(/^c3l_content_demo_session=[\w-]{43};/)
+  return cookie.split(';')[0]
+}
+
 async function withTestData(run: (directory: string) => Promise<void>) {
   const root = await realpath(tmpdir())
   const directory = await mkdtemp(join(root, 'c3l-content-demo-test-'))
@@ -82,21 +110,94 @@ test.each([
   expect(result.stderr.toString()).toContain(message)
 })
 
+test('demo login and logout enforce same-origin requests and revoke server sessions', async () => {
+  await withTestData((directory) =>
+    withDemoProcess(directory, async (url) => {
+      const anonymous = client(url)
+      const modules = `${coursePath(courseId)}/modules`
+      const page = await anonymous(`${base}/login`)
+      expect(page.status).toBe(200)
+      expect(await page.text()).toContain('Sign in to the demo')
+      expect((await anonymous(`${base}/manage`)).headers.get('location')).toBe(`${base}/login`)
+
+      const badLogin = await login(url, 'instructor', 'wrong password')
+      expect(badLogin.status).toBe(401)
+      expect(badLogin.headers.has('set-cookie')).toBe(false)
+      expect(await badLogin.text()).toContain('Incorrect demo username or password.')
+      expect(
+        (await login(url, 'instructor', 'C3L-Demo-101', 'https://foreign.example')).status,
+      ).toBe(403)
+      expect(
+        (
+          await anonymous(`${base}/login`, {
+            method: 'POST',
+            body: new URLSearchParams({ username: 'instructor', password: 'C3L-Demo-101' }),
+          })
+        ).status,
+      ).toBe(403)
+
+      const instructor = client(url, await signIn(url, 'instructor'))
+      const dashboard = await instructor(base)
+      expect(dashboard.status).toBe(200)
+      const html = await dashboard.text()
+      expect(html).toContain('/03-content/manage?courseId=DEMO-101')
+      expect(html).not.toContain('/03-content/learn')
+      expect((await instructor(modules)).status).toBe(200)
+
+      const logout = `${base}/logout`
+      expect(
+        (
+          await instructor(logout, {
+            method: 'POST',
+            headers: { origin: 'https://foreign.example' },
+          })
+        ).status,
+      ).toBe(403)
+      expect((await instructor(logout, { method: 'POST' })).status).toBe(403)
+      expect((await instructor(modules)).status).toBe(200)
+      const signedOut = await instructor(logout, {
+        method: 'POST',
+        headers: { origin: url.origin },
+      })
+      expect(signedOut.status).toBe(303)
+      expect(signedOut.headers.get('location')).toBe(`${base}/login`)
+      expect(signedOut.headers.get('set-cookie')).toContain('Max-Age=0')
+      expect((await instructor(modules)).status).toBe(403)
+    }),
+  )
+})
+
 test('loopback HTTP demo supports the instructor-to-student workflow in isolated storage', async () => {
   await withTestData((directory) =>
     withDemoProcess(directory, async (url) => {
       expect(url.hostname).toBe('127.0.0.1')
-      const request = (path: string, init?: RequestInit) => fetch(new URL(path, url), init)
-      for (const path of ['/manage', '/learn']) {
-        const page = await request(`${base}${path}?courseId=OTHER-101`)
+      const instructorCookie = await signIn(url, 'instructor')
+      const request = client(url, instructorCookie)
+      const asStudent = client(url, await signIn(url, 'student'))
+      const unenrolled = client(url, await signIn(url, 'unenrolled'))
+      const studentDashboard = await (await asStudent(base)).text()
+      expect(studentDashboard).toContain('/03-content/learn?courseId=DEMO-101')
+      expect(studentDashboard).not.toContain('/03-content/manage')
+      const noCourses = await (await unenrolled(base)).text()
+      expect(noCourses).toContain('No demo courses are assigned to this account.')
+      expect(noCourses).not.toContain(courseId)
+      expect((await asStudent(`${base}/manage`)).status).toBe(403)
+      expect((await request(`${base}/learn`)).status).toBe(403)
+      expect((await unenrolled(`${base}/learn`)).status).toBe(403)
+      for (const [path, requestPage] of [
+        ['/manage', request],
+        ['/learn', asStudent],
+      ] as const) {
+        const page = await requestPage(`${base}${path}?courseId=DEMO-101`)
         expect(page.status).toBe(200)
         expect(page.headers.get('content-type')).toContain('text/html')
         const html = await page.text()
         expect(html).toContain(
-          'Authentication, instructor permissions, and course enrollment are simulated.',
+          'Accounts, authentication, instructor permissions, and course enrollment are simulated.',
         )
         expect(html).toContain('value="DEMO-101"')
         expect(html).not.toContain('OTHER-101')
+        expect((await requestPage(`${base}${path}?courseId=OTHER-101`)).status).toBe(403)
       }
 
       const otherLocalAddress = new URL(url)
@@ -105,8 +206,14 @@ test('loopback HTTP demo supports the instructor-to-student workflow in isolated
 
       const course = coursePath(courseId)
       const modules = `${course}/modules`
+      const studentModules = `${course}/student/modules`
+      const anonymous = client(url)
+      expect((await anonymous(modules, { headers: forged })).status).toBe(403)
+      expect((await anonymous(studentModules, { headers: forged })).status).toBe(401)
+      expect((await unenrolled(studentModules)).status).toBe(403)
+      expect((await request(studentModules)).status).toBe(403)
       const readStudent = async () => {
-        const response = await request(`${course}/student/modules`, { headers: forged })
+        const response = await asStudent(`${course}/student/modules`, { headers: forged })
         expect(response.status).toBe(200)
         return ((await response.json()) as { modules: LearningModule[] }).modules
       }
@@ -127,6 +234,28 @@ test('loopback HTTP demo supports the instructor-to-student workflow in isolated
       expect(created.status).toBe(201)
       const { module } = (await created.json()) as { module: LearningModule }
       expect(module).toMatchObject({ courseId, published: false, visibility: 'hidden' })
+      const modulePath = `${modules}/${module.id}`
+      const studentModulePath = `${studentModules}/${module.id}`
+      const forgeries = { ...forged, 'content-type': 'application/json' }
+      for (const [path, init] of [
+        [modules, json('POST', { title: 'Unauthorized draft' })],
+        [modules, {}],
+        [`${modules}/organized`, {}],
+        [`${modulePath}/publication`, json('PATCH', { published: true })],
+        [`${modulePath}/visibility`, json('PATCH', { visibility: 'visible' })],
+        [`${modulePath}/units`, json('POST', { title: 'Unauthorized unit' })],
+        [`${modulePath}/units`, {}],
+        [`${modulePath}/materials`, { method: 'POST' }],
+        [`${modulePath}/materials`, {}],
+      ] as const) {
+        expect((await asStudent(path, { ...init, headers: forgeries })).status).toBe(403)
+      }
+      const unitResponse = await request(
+        `${modulePath}/units`,
+        json('POST', { title: 'Field notes unit' }),
+      )
+      expect(unitResponse.status).toBe(201)
+      const { unit } = (await unitResponse.json()) as { unit: { id: string } }
       expect(await (await request(modules)).json()).toEqual({ modules: [module] })
       for (const query of ['week=2', 'topic=fieldwork']) {
         expect(await (await request(`${modules}/organized?${query}`)).json()).toEqual({
@@ -146,7 +275,7 @@ test('loopback HTTP demo supports the instructor-to-student workflow in isolated
         ).status,
       ).toBe(403)
       expect((await request(`${other}/modules`, { headers: forged })).status).toBe(403)
-      expect((await request(`${other}/student/modules`, { headers: forged })).status).toBe(404)
+      expect((await asStudent(`${other}/student/modules`, { headers: forged })).status).toBe(404)
       for (const [operation, init] of [
         ['publication', json('PATCH', { published: true })],
         ['visibility', json('PATCH', { visibility: 'visible' })],
@@ -177,10 +306,31 @@ test('loopback HTTP demo supports the instructor-to-student workflow in isolated
       expect(await readStudent()).toEqual([])
       await change('publication', { published: true })
       expect(await readStudent()).toEqual([])
+      for (const resource of ['units', 'materials']) {
+        expect((await asStudent(`${studentModulePath}/${resource}`)).status).toBe(404)
+        expect(
+          (await anonymous(`${studentModulePath}/${resource}`, { headers: forged })).status,
+        ).toBe(401)
+        expect((await unenrolled(`${studentModulePath}/${resource}`)).status).toBe(403)
+        expect((await request(`${studentModulePath}/${resource}`)).status).toBe(403)
+        expect((await asStudent(`${other}/student/modules/${module.id}/${resource}`)).status).toBe(
+          404,
+        )
+      }
       await change('visibility', { visibility: 'visible' })
       expect(await readStudent()).toEqual([{ ...module, published: true, visibility: 'visible' }])
+      const studentUnits = await asStudent(`${studentModulePath}/units`)
+      expect(studentUnits.status).toBe(200)
+      expect(await studentUnits.json()).toEqual({ units: [unit] })
+      const studentMaterials = await asStudent(`${studentModulePath}/materials`)
+      expect(studentMaterials.status).toBe(200)
+      const metadata = (await studentMaterials.json()) as { materials: Record<string, unknown>[] }
+      expect(metadata.materials).toMatchObject([{ filename: 'field-notes.pdf' }])
+      expect(metadata.materials[0]).not.toHaveProperty('storedFilename')
       await change('publication', { published: false })
       expect(await readStudent()).toEqual([])
+      expect((await asStudent(`${studentModulePath}/units`)).status).toBe(404)
+      expect((await asStudent(`${studentModulePath}/materials`)).status).toBe(404)
       await change('publication', { published: true })
       await change('visibility', { visibility: 'hidden' })
       expect(await readStudent()).toEqual([])
@@ -193,7 +343,9 @@ test('loopback HTTP demo supports the instructor-to-student workflow in isolated
         [`${course}/student/modules`, 401],
       ] as const) {
         const response = await app.fetch(
-          new Request(`http://localhost${path}`, { headers: forged }),
+          new Request(`http://localhost${path}`, {
+            headers: { ...forged, cookie: instructorCookie },
+          }),
         )
         expect(response.status).toBe(status)
       }
@@ -207,7 +359,8 @@ test('demo modules, access state, and uploaded files survive a process restart',
     const modules = `${course}/modules`
     const contents = '%PDF-persistence-test'
     const saved = await withDemoProcess(directory, async (url) => {
-      const request = (path: string, init?: RequestInit) => fetch(new URL(path, url), init)
+      const cookie = await signIn(url, 'instructor')
+      const request = client(url, cookie)
       const created = await request(
         modules,
         json('POST', { title: 'Persistent presentation module' }),
@@ -242,20 +395,31 @@ test('demo modules, access state, and uploaded files survive a process restart',
       })
       expect(uploaded.status).toBe(201)
       const { material } = (await uploaded.json()) as { material: { storedFilename: string } }
-      return { module: { ...module, published: true, visibility: 'visible' }, unit, material }
+      return {
+        module: { ...module, published: true, visibility: 'visible' },
+        unit,
+        material,
+        cookie,
+      }
     })
 
     await withDemoProcess(directory, async (url) => {
-      for (const path of [modules, `${course}/student/modules`]) {
-        const response = await fetch(new URL(path, url))
+      expect((await client(url, saved.cookie)(modules)).status).toBe(403)
+      const asInstructor = client(url, await signIn(url, 'instructor'))
+      const asStudent = client(url, await signIn(url, 'student'))
+      for (const [path, request] of [
+        [modules, asInstructor],
+        [`${course}/student/modules`, asStudent],
+      ] as const) {
+        const response = await request(path)
         expect(response.status).toBe(200)
         expect(await response.json()).toEqual({ modules: [saved.module] })
       }
       const modulePath = `${modules}/${saved.module.id}`
-      const units = await fetch(new URL(`${modulePath}/units`, url))
+      const units = await asInstructor(`${modulePath}/units`)
       expect(units.status).toBe(200)
       expect(await units.json()).toEqual({ units: [saved.unit] })
-      const materials = await fetch(new URL(`${modulePath}/materials`, url))
+      const materials = await asInstructor(`${modulePath}/materials`)
       expect(materials.status).toBe(200)
       expect(await materials.json()).toEqual({ materials: [saved.material] })
       expect(
