@@ -14,7 +14,7 @@ import type { AuthenticatedUser } from './content.auth'
 import { authorizeCourseAccess } from './content.policy'
 import type { StudentRouteDependencies } from './content.student.routes'
 
-import { contentDatabase } from './module.service'
+import { getContentDatabase } from './module.service'
 import { getModulesFromDatabase } from './content.database'
 import { getLearningUnitsByModule } from './unit.service'
 import { getLearningMaterialsByModule } from './material.service'
@@ -33,8 +33,6 @@ export interface StudentResourceRouteDependencies
 export function createStudentResourceRoutes(
   dependencies: StudentResourceRouteDependencies,
 ) {
-  const database = dependencies.database ?? contentDatabase
-
   async function retrieveResources(
     request: Request,
     courseId: string,
@@ -110,6 +108,7 @@ export function createStudentResourceRoutes(
       }
 
       // Verify parent-module ownership and availability.
+      const database = dependencies.database ?? getContentDatabase()
       const parentModule = getModulesFromDatabase(
         database,
         courseId,
