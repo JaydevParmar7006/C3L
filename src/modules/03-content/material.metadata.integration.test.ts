@@ -4,7 +4,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { describe, expect, test } from 'bun:test'
 import {
-  contentDatabase,
+  getContentDatabase,
   createLearningModule,
 } from './module.service'
 import { createMaterialUploadRoutes } from './material.upload.routes'
@@ -150,7 +150,7 @@ describe('Learning material metadata integration', () => {
 
       expect(
         getMaterialsFromDatabase(
-          contentDatabase,
+          getContentDatabase(),
           wrongCourseId,
           module.id,
         ),
@@ -236,7 +236,7 @@ describe('Learning material metadata integration', () => {
       })
 
       // Simulate a database insertion failure for this test course.
-      contentDatabase.exec(`
+      getContentDatabase().exec(`
         CREATE TEMP TRIGGER ${triggerName}
         BEFORE INSERT ON learning_materials
         WHEN NEW.course_id = '${courseId}'
@@ -267,7 +267,7 @@ describe('Learning material metadata integration', () => {
       // The uploaded file must have been removed.
       expect(await readdir(directory)).toEqual([])
     } finally {
-      contentDatabase.exec(
+      getContentDatabase().exec(
         `DROP TRIGGER IF EXISTS ${triggerName}`,
       )
 

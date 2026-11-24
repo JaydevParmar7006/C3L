@@ -16,7 +16,7 @@ import {
   getModulesFromDatabase,
 } from './content.database'
 
-import { contentDatabase } from './module.service'
+import { getContentDatabase } from './module.service'
 
 import type {
   CreateLearningUnitInput,
@@ -33,7 +33,7 @@ import { validateLearningUnitInput } from './unit.validation'
  */
 export function createLearningUnit(
   input: CreateLearningUnitInput,
-  database: Database = contentDatabase,
+  database: Database = getContentDatabase(),
 ): LearningUnit {
   const validationError = validateLearningUnitInput(input)
 
@@ -88,7 +88,7 @@ export function createLearningUnit(
 export function getLearningUnitsByModule(
   courseId: string,
   moduleId: string,
-  database: Database = contentDatabase,
+  database: Database = getContentDatabase(),
 ): LearningUnit[] {
   if (typeof courseId !== 'string' || !courseId.trim()) {
     throw new Error('Course ID is required')

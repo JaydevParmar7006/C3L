@@ -41,21 +41,18 @@ async function withDemoProcess<T>(directory: string, run: (url: URL) => Promise<
     await demo.stop()
     process.disconnect()
   `
-  const processHandle = Bun.spawn(
-    [process.execPath, '--no-env-file', '-e', script],
-    {
-      cwd: import.meta.dir,
-      env: { ...Bun.env, NODE_ENV: 'test', C3L_CONTENT_DEMO: '1' },
-      stdin: 'pipe',
-      stderr: 'inherit',
-      ipc(message) {
-        ready.resolve(new URL(String(message)))
-      },
-      onExit(_child, code) {
-        ready.reject(new Error(`Demo process exited before it was ready (code ${code}).`))
-      },
+  const processHandle = Bun.spawn([process.execPath, '--no-env-file', '-e', script], {
+    cwd: import.meta.dir,
+    env: { ...Bun.env, NODE_ENV: 'test', C3L_CONTENT_DEMO: '1' },
+    stdin: 'pipe',
+    stderr: 'inherit',
+    ipc(message) {
+      ready.resolve(new URL(String(message)))
     },
-  )
+    onExit(_child, code) {
+      ready.reject(new Error(`Demo process exited before it was ready (code ${code}).`))
+    },
+  })
   let result: T
   try {
     result = await run(await ready.promise)
@@ -153,7 +150,10 @@ test('loopback HTTP demo supports the instructor-to-student workflow in isolated
       for (const [operation, init] of [
         ['publication', json('PATCH', { published: true })],
         ['visibility', json('PATCH', { visibility: 'visible' })],
+        ['units', json('POST', { title: 'Other course unit' })],
+        ['units', { method: 'GET' }],
         ['materials', { method: 'POST' }],
+        ['materials', { method: 'GET' }],
       ] as const) {
         expect((await request(`${other}/modules/${module.id}/${operation}`, init)).status).toBe(403)
       }
@@ -214,24 +214,35 @@ test('demo modules, access state, and uploaded files survive a process restart',
       )
       expect(created.status).toBe(201)
       const { module } = (await created.json()) as { module: LearningModule }
+      const modulePath = `${modules}/${module.id}`
+
+      const unitResponse = await request(
+        `${modulePath}/units`,
+        json('POST', { title: 'Persistent unit' }),
+      )
+      expect(unitResponse.status).toBe(201)
+      const { unit } = (await unitResponse.json()) as {
+        unit: { id: string; moduleId: string; title: string }
+      }
+      expect(unit).toMatchObject({ moduleId: module.id, title: 'Persistent unit' })
 
       for (const [operation, state] of [
         ['publication', { published: true }],
         ['visibility', { visibility: 'visible' }],
       ] as const) {
-        const changed = await request(`${modules}/${module.id}/${operation}`, json('PATCH', state))
+        const changed = await request(`${modulePath}/${operation}`, json('PATCH', state))
         expect(changed.status).toBe(200)
       }
 
       const form = new FormData()
       form.append('file', new File([contents], 'persistent.pdf', { type: 'application/pdf' }))
-      const uploaded = await request(`${modules}/${module.id}/materials`, {
+      const uploaded = await request(`${modulePath}/materials`, {
         method: 'POST',
         body: form,
       })
       expect(uploaded.status).toBe(201)
       const { material } = (await uploaded.json()) as { material: { storedFilename: string } }
-      return { module: { ...module, published: true, visibility: 'visible' }, material }
+      return { module: { ...module, published: true, visibility: 'visible' }, unit, material }
     })
 
     await withDemoProcess(directory, async (url) => {
@@ -240,6 +251,13 @@ test('demo modules, access state, and uploaded files survive a process restart',
         expect(response.status).toBe(200)
         expect(await response.json()).toEqual({ modules: [saved.module] })
       }
+      const modulePath = `${modules}/${saved.module.id}`
+      const units = await fetch(new URL(`${modulePath}/units`, url))
+      expect(units.status).toBe(200)
+      expect(await units.json()).toEqual({ units: [saved.unit] })
+      const materials = await fetch(new URL(`${modulePath}/materials`, url))
+      expect(materials.status).toBe(200)
+      expect(await materials.json()).toEqual({ materials: [saved.material] })
       expect(
         await readFile(join(directory, 'demo-uploads', saved.material.storedFilename), 'utf8'),
       ).toBe(contents)

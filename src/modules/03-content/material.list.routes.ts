@@ -6,7 +6,7 @@
 
 import { Elysia } from 'elysia'
 import type { Database } from 'bun:sqlite'
-import { contentDatabase } from './module.service'
+import { getContentDatabase } from './module.service'
 import { getModulesFromDatabase } from './content.database'
 import { getLearningMaterialsByModule } from './material.service'
 import type { ModuleAccessAuthorizer } from './module.access.routes'
@@ -25,8 +25,6 @@ export interface MaterialListRouteOptions {
 export function createMaterialListRoutes(
   options: MaterialListRouteOptions = {},
 ) {
-  const database = options.database ?? contentDatabase
-
   return new Elysia().get(
     '/api/courses/:courseId/modules/:moduleId/materials',
     async ({ params, request, set }) => {
@@ -62,6 +60,7 @@ export function createMaterialListRoutes(
       }
 
       try {
+        const database = options.database ?? getContentDatabase()
         // Verify the module belongs to the selected course.
         const parentModule = getModulesFromDatabase(
           database,

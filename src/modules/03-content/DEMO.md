@@ -11,7 +11,7 @@ bun run --no-env-file .\src\modules\03-content\demo.server.ts
 - [Instructor Workspace](http://127.0.0.1:3103/03-content/manage)
 - [Student Learning](http://127.0.0.1:3103/03-content/learn)
 
-The demo simulates authentication, instructor permissions, and enrollment for `DEMO-101`. Any local client that can connect can use the simulated views. Demo modules and their publication and visibility settings persist in `.c3l-content-data/demo.sqlite`. Uploaded files persist in `.c3l-content-data/demo-uploads/`. The upload endpoint returns metadata, but there is currently no material catalog or student download endpoint.
+The demo simulates authentication, instructor permissions, and enrollment for `DEMO-101`. Any local client that can connect can use the simulated views. Demo modules, their publication and visibility settings, learning units, and material metadata persist in `.c3l-content-data/demo.sqlite`. Uploaded files persist in `.c3l-content-data/demo-uploads/`. The demo exposes instructor APIs for units and material metadata. The existing pages provide no unit editor or student download endpoint.
 
 ## Reset demo data
 

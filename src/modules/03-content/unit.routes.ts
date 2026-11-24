@@ -10,7 +10,6 @@
 import { Elysia } from 'elysia'
 import type { Database } from 'bun:sqlite'
 import type { ModuleAccessAuthorizer } from './module.access.routes'
-import { contentDatabase } from './module.service'
 
 import {
   createLearningUnit,
@@ -36,8 +35,6 @@ export interface UnitRouteOptions {
 export function createUnitRoutes(
   options: UnitRouteOptions = {},
 ) {
-  const database = options.database ?? contentDatabase
-
   async function isAuthorized(
     request: Request,
     courseId: string,
@@ -122,7 +119,7 @@ export function createUnitRoutes(
               title: body.title,
               ...(description !== undefined && { description }),
             },
-            database,
+            options.database,
           )
 
           return Response.json({ unit }, { status: 201 })
@@ -170,7 +167,7 @@ export function createUnitRoutes(
           const units = getLearningUnitsByModule(
             courseId,
             moduleId,
-            database,
+            options.database,
           )
 
           return Response.json({ units }, { status: 200 })

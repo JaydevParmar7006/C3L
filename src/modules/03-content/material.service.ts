@@ -16,7 +16,7 @@ import {
   saveMaterialToDatabase,
 } from './content.database'
 
-import { contentDatabase } from './module.service'
+import { getContentDatabase } from './module.service'
 
 import type { LearningMaterial } from './material.model'
 
@@ -28,7 +28,7 @@ import type { LearningMaterial } from './material.model'
  */
 export function saveLearningMaterialMetadata(
   material: LearningMaterial,
-  database: Database = contentDatabase,
+  database: Database = getContentDatabase(),
 ): LearningMaterial {
   const parentModule = getModulesFromDatabase(
     database,
@@ -54,7 +54,7 @@ export function saveLearningMaterialMetadata(
 export function getLearningMaterialsByModule(
   courseId: string,
   moduleId: string,
-  database: Database = contentDatabase,
+  database: Database = getContentDatabase(),
 ): LearningMaterial[] {
   if (typeof courseId !== 'string' || !courseId.trim()) {
     throw new Error('Course ID is required')

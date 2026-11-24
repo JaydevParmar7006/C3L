@@ -5,10 +5,12 @@ import { createContentTables, openContentDatabase } from './content.database'
 import { createStudentContentRoutes } from './content.student.routes'
 import { studentUiRoutes } from './content.student.ui'
 import { contentUiRoutes } from './content.ui'
+import { createMaterialListRoutes } from './material.list.routes'
 import { createMaterialUploadRoutes } from './material.upload.routes'
 import { createModuleAccessRoutes } from './module.access.routes'
 import { createInstructorModuleRoutes } from './module.instructor.routes'
 import { withContentDatabase } from './module.service'
+import { createUnitRoutes } from './unit.routes'
 
 const hostname = '127.0.0.1'
 const base = '/03-content'
@@ -82,7 +84,9 @@ export function startContentDemo(
           .use(studentUiRoutes)
           .use(createInstructorModuleRoutes(authorizeInstructor))
           .use(createModuleAccessRoutes({ authorizeInstructor }))
+          .use(createUnitRoutes({ authorizeInstructor }))
           .use(createMaterialUploadRoutes({ authorizeInstructor, uploadDirectory }))
+          .use(createMaterialListRoutes({ authorizeInstructor }))
           .use(
             createStudentContentRoutes({
               identity: { currentUser: async () => student },

@@ -2,7 +2,7 @@
 import { Elysia } from 'elysia'
 import { unlink } from 'node:fs/promises'
 import type { Database } from 'bun:sqlite'
-import { contentDatabase } from './module.service'
+import { getContentDatabase } from './module.service'
 import { getModulesFromDatabase } from './content.database'
 import { saveLearningMaterial } from './material.storage'
 import { validateLearningMaterial } from './material.validation'
@@ -27,8 +27,6 @@ export interface MaterialUploadRouteOptions {
 export function createMaterialUploadRoutes(
   options: MaterialUploadRouteOptions = {},
 ) {
-  const database = options.database ?? contentDatabase
-
   return new Elysia().post(
     '/api/courses/:courseId/modules/:moduleId/materials',
     async ({ params, request, set }) => {
@@ -50,6 +48,7 @@ export function createMaterialUploadRoutes(
       }
 
       // Verify ownership using the selected database.
+      const database = options.database ?? getContentDatabase()
       const module = getModulesFromDatabase(
         database,
         courseId,
