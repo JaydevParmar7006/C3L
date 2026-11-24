@@ -1,5 +1,5 @@
 import type { LearningModule } from './module.model'
-import { contentDatabase, getLearningModulesByCourse } from './module.service'
+import { getContentDatabase, getLearningModulesByCourse } from './module.service'
 import { updateModuleVisibilityInDatabase } from './content.database'
 
 /**
@@ -38,7 +38,7 @@ export function setModuleVisibility(
   }
 
   // Sprint 3: Save the visibility change in SQLite.
-  const updated = updateModuleVisibilityInDatabase(contentDatabase, courseId, moduleId, visibility)
+  const updated = updateModuleVisibilityInDatabase(getContentDatabase(), courseId, moduleId, visibility)
 
   if (!updated) {
     return null

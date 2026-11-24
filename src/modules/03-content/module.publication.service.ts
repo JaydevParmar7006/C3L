@@ -1,5 +1,5 @@
 import type { LearningModule } from './module.model'
-import { contentDatabase, getLearningModulesByCourse } from './module.service'
+import { getContentDatabase, getLearningModulesByCourse } from './module.service'
 
 import { updateModulePublicationInDatabase } from './content.database'
 
@@ -33,7 +33,7 @@ export function setModulePublication(
     return null
   }
 
-  const updated = updateModulePublicationInDatabase(contentDatabase, courseId, moduleId, published)
+  const updated = updateModulePublicationInDatabase(getContentDatabase(), courseId, moduleId, published)
 
   if (!updated) {
     return null

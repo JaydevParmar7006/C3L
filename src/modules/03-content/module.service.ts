@@ -10,6 +10,8 @@
  * Modules remain available after server restarts.
  */
 
+import type { Database } from 'bun:sqlite'
+import { AsyncLocalStorage } from 'node:async_hooks'
 import {
   openContentDatabase,
   createContentTables,
@@ -21,14 +23,27 @@ import type { CreateLearningModuleInput, LearningModule } from './module.model'
 
 import { validateCreateLearningModule } from './module.validation'
 
-// Sprint 3: Use in-memory SQLite during tests.
-// Use persistent SQLite during normal application runs.
+// Keep the usual database path and open it only for callers without a scoped database.
 const databasePath = Bun.env.NODE_ENV === 'test' ? ':memory:' : undefined
 
-export const contentDatabase = openContentDatabase(databasePath)
+const scopedDatabase = new AsyncLocalStorage<Database>()
+let defaultDatabase: Database | undefined
 
-// Ensure the learning_modules table exists.
-createContentTables(contentDatabase)
+export function withContentDatabase<T>(database: Database, run: () => T): T {
+  return scopedDatabase.run(database, run)
+}
+
+export function getContentDatabase(): Database {
+  const database = scopedDatabase.getStore()
+  if (database) return database
+
+  if (!defaultDatabase) {
+    const opened = openContentDatabase(databasePath)
+    createContentTables(opened)
+    defaultDatabase = opened
+  }
+  return defaultDatabase
+}
 
 /**
  * Creates a new learning module.
@@ -62,7 +77,7 @@ export function createLearningModule(input: CreateLearningModuleInput): Learning
   }
 
   // Sprint 3: Save the new module permanently in SQLite.
-  saveModuleToDatabase(contentDatabase, newModule)
+  saveModuleToDatabase(getContentDatabase(), newModule)
 
   // Return the created module to the caller.
   return newModule
@@ -78,5 +93,5 @@ export function createLearningModule(input: CreateLearningModuleInput): Learning
  * @returns Matching learning modules.
  */
 export function getLearningModulesByCourse(courseId: string): LearningModule[] {
-  return getModulesFromDatabase(contentDatabase, courseId)
+  return getModulesFromDatabase(getContentDatabase(), courseId)
 }
